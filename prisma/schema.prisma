@@ -1,0 +1,222 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  USER
+}
+
+enum UploadStatus {
+  SUCCESS
+  FAILED
+}
+
+enum UploadTarget {
+  SUMMARY
+  DETAIL
+}
+
+model User {
+  id            String        @id @default(cuid())
+  email         String        @unique
+  name          String
+  passwordHash  String
+  role          Role          @default(USER)
+  active        Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  uploadBatches UploadBatch[]
+}
+
+model UploadBatch {
+  id            String       @id @default(cuid())
+  fileName      String
+  target        UploadTarget?
+  rowCount      Int          @default(0)
+  uploadedById  String
+  uploadedBy    User         @relation(fields: [uploadedById], references: [id])
+  status        UploadStatus
+  errorMessage  String?
+  createdAt     DateTime     @default(now())
+  summaries     EclaimTransactionSummary[]
+  details       EclaimTransactionData[]
+}
+
+model EclaimTransactionSummary {
+  id               String   @id @default(cuid())
+  tranId           BigInt?  @map("tran_id")
+  hcode            String?  @db.VarChar(10)
+  hname            String?  @db.VarChar(255)
+  prov1            String?  @db.VarChar(10)
+  prov1Name        String?  @map("prov1_name") @db.VarChar(100)
+  rg1              Int?
+  htype            String?  @db.VarChar(255)
+  rep              String?  @db.VarChar(50)
+  hn               String?  @db.VarChar(50)
+  ageYy            Int?     @map("age_yy")
+  ageMm            Int?     @map("age_mm")
+  dobAf            String?  @map("dob_af") @db.VarChar(8)
+  maininsclAf      String?  @map("maininscl_af") @db.VarChar(20)
+  subinsclAf       String?  @map("subinscl_af") @db.VarChar(10)
+  hmain2           String?  @db.VarChar(10)
+  hname2           String?  @db.VarChar(255)
+  prov2            String?  @db.VarChar(10)
+  rg2              Int?
+  hsubAf           String?  @map("hsub_af") @db.VarChar(10)
+  hsubAfName       String?  @map("hsub_af_name") @db.VarChar(255)
+  hsubAfDes        String?  @map("hsub_af_des") @db.VarChar(255)
+  personTypeName   String?  @map("person_type_name") @db.VarChar(50)
+  ymDateadm        String?  @map("ym_dateadm") @db.VarChar(6)
+  dateadm          String?  @db.VarChar(8)
+  timeadm          String?  @db.VarChar(4)
+  status           Int?
+  codeId           String?  @map("code_id") @db.VarChar(50)
+  aen              String?  @db.VarChar(10)
+  dx               String?  @db.Text
+  proc             String?  @db.Text
+  projectcode      String?  @db.VarChar(50)
+  psAfRate         String?  @map("ps_af_rate") @db.VarChar(10)
+  fundAf           String?  @map("fund_af") @db.VarChar(50)
+  subFund          String?  @map("sub_fund") @db.VarChar(255)
+  chargeCost       Decimal? @map("charge_cost") @db.Decimal(12, 2)
+  sumsCost         Decimal? @map("sums_cost") @db.Decimal(12, 2)
+  dateSend         Float?   @map("date_send")
+  filenameSend     String?  @map("filename_send") @db.VarChar(255)
+  sev01            Decimal? @db.Decimal(12, 2)
+  sev01Paid        Decimal? @map("sev01_paid") @db.Decimal(12, 2)
+  sev02            Decimal? @db.Decimal(12, 2)
+  sev02Paid        Decimal? @map("sev02_paid") @db.Decimal(12, 2)
+  sev03            Decimal? @db.Decimal(12, 2)
+  sev03Paid        Decimal? @map("sev03_paid") @db.Decimal(12, 2)
+  sev04            Decimal? @db.Decimal(12, 2)
+  sev04Paid        Decimal? @map("sev04_paid") @db.Decimal(12, 2)
+  sev05            Decimal? @db.Decimal(12, 2)
+  sev05Paid        Decimal? @map("sev05_paid") @db.Decimal(12, 2)
+  sev06            Decimal? @db.Decimal(12, 2)
+  sev06Paid        Decimal? @map("sev06_paid") @db.Decimal(12, 2)
+  sev07            Decimal? @db.Decimal(12, 2)
+  sev07Paid        Decimal? @map("sev07_paid") @db.Decimal(12, 2)
+  sev08            Decimal? @db.Decimal(12, 2)
+  sev08Paid        Decimal? @map("sev08_paid") @db.Decimal(12, 2)
+  sev09            Decimal? @db.Decimal(12, 2)
+  sev09Paid        Decimal? @map("sev09_paid") @db.Decimal(12, 2)
+  sev10            Decimal? @db.Decimal(12, 2)
+  sev10Paid        Decimal? @map("sev10_paid") @db.Decimal(12, 2)
+  sev11            Decimal? @db.Decimal(12, 2)
+  sev11Paid        Decimal? @map("sev11_paid") @db.Decimal(12, 2)
+  sev12            Decimal? @db.Decimal(12, 2)
+  sev12Paid        Decimal? @map("sev12_paid") @db.Decimal(12, 2)
+  sev13            Decimal? @db.Decimal(12, 2)
+  sev13Paid        Decimal? @map("sev13_paid") @db.Decimal(12, 2)
+  sev14            Decimal? @db.Decimal(12, 2)
+  sev14Paid        Decimal? @map("sev14_paid") @db.Decimal(12, 2)
+  sev15            Decimal? @db.Decimal(12, 2)
+  sev15Paid        Decimal? @map("sev15_paid") @db.Decimal(12, 2)
+  sev16            Decimal? @db.Decimal(12, 2)
+  sev16Paid        Decimal? @map("sev16_paid") @db.Decimal(12, 2)
+  sev17            Decimal? @db.Decimal(12, 2)
+  sev17Paid        Decimal? @map("sev17_paid") @db.Decimal(12, 2)
+  sev18            Decimal? @db.Decimal(12, 2)
+  sev18Paid        Decimal? @map("sev18_paid") @db.Decimal(12, 2)
+  sev19            Decimal? @db.Decimal(12, 2)
+  sev19Paid        Decimal? @map("sev19_paid") @db.Decimal(12, 2)
+  hcodePaid        String?  @map("hcode_paid") @db.VarChar(10)
+  stmtPeriod       String?  @map("stmt_period") @db.VarChar(50)
+  statusCardb      Int?     @map("status_cardb")
+  appealAudit      String?  @map("appeal_audit") @db.VarChar(255)
+  pdx              String?  @db.VarChar(20)
+  pdxName          String?  @map("pdx_name") @db.Text
+  sourceFileName   String   @map("source_file_name")
+  uploadedById     String   @map("uploaded_by_id")
+  uploadedAt       DateTime @default(now()) @map("uploaded_at")
+  uploadBatchId    String?  @map("upload_batch_id")
+  uploadBatch      UploadBatch? @relation(fields: [uploadBatchId], references: [id])
+
+  @@index([tranId])
+  @@index([uploadedAt])
+  @@map("eclaim_transaction_summary")
+}
+
+model EclaimTransactionData {
+  id               String   @id @default(cuid())
+  hcode            String?  @db.VarChar(5)
+  hname            String?  @db.VarChar(255)
+  htype            String?  @db.VarChar(10)
+  hmain2           String?  @db.VarChar(5)
+  hmain2Name       String?  @map("hmain2_name") @db.VarChar(255)
+  hsubAf           String?  @map("hsub_af") @db.VarChar(5)
+  hsubAfName       String?  @map("hsub_af_name") @db.VarChar(255)
+  hsubAfDes        String?  @map("hsub_af_des") @db.VarChar(255)
+  hcodePaid        String?  @map("hcode_paid") @db.VarChar(5)
+  hcodePaidName    String?  @map("hcode_paid_name") @db.VarChar(255)
+  tranId           BigInt?  @map("tran_id")
+  parentTranId     BigInt?  @map("parent_tran_id")
+  hn               String?  @db.VarChar(50)
+  an               String?  @db.VarChar(50)
+  ageYy            Int?     @map("age_yy")
+  ageMm            Int?     @map("age_mm")
+  dobAf            String?  @map("dob_af") @db.VarChar(8)
+  maininsclAf      String?  @map("maininscl_af") @db.VarChar(20)
+  subinsclAf       String?  @map("subinscl_af") @db.VarChar(10)
+  dateadm          String?  @db.VarChar(8)
+  timeadm          String?  @db.VarChar(4)
+  datedsc          String?  @db.VarChar(8)
+  timedsc          String?  @db.VarChar(4)
+  personType       String?  @map("person_type") @db.VarChar(2)
+  hcodeRegion      String?  @map("hcode_region") @db.VarChar(2)
+  hcodeRegionName  String?  @map("hcode_region_name") @db.VarChar(100)
+  prov1            String?  @db.VarChar(4)
+  hmainRegion      String?  @map("hmain_region") @db.VarChar(2)
+  hmainRegionName  String?  @map("hmain_region_name") @db.VarChar(100)
+  prov2            String?  @db.VarChar(4)
+  pdx              String?  @db.VarChar(10)
+  sdxDiagnosis     String?  @map("sdx_diagnosis") @db.Text
+  procedures       String?  @db.Text
+  subFund          String?  @map("sub_fund") @db.VarChar(50)
+  subFundName      String?  @map("sub_fund_name") @db.VarChar(255)
+  amountClaim      Decimal? @map("ยอดเบิก") @db.Decimal(12, 2)
+  amountPaid       Decimal? @map("ยอดจ่าย") @db.Decimal(12, 2)
+  itemCode         String?  @map("item_code") @db.VarChar(50)
+  sevGroup         String?  @map("sev_group") @db.VarChar(10)
+  reqQty           Int?     @map("req_qty")
+  paidQty          Int?     @map("paid_qty")
+  unitPrice        Decimal? @map("ราคากลาง") @db.Decimal(12, 2)
+  tmtId            String?  @map("tmt_id") @db.VarChar(50)
+  itemName         String?  @map("item_name") @db.Text
+  dosageform       String?  @db.VarChar(255)
+  drugUnit         String?  @map("หน่วยยา") @db.VarChar(100)
+  nhsoDrugGroup    String?  @map("กลุ่มยาตามบัญชีฯ (NHSO)") @db.VarChar(255)
+  diseaseDrugGroup String?  @map("กลุ่มยาตามโรค") @db.VarChar(255)
+  stmtPeriod       String?  @map("stmt_period") @db.VarChar(50)
+  orgDateSend      String?  @map("org_date_send") @db.VarChar(8)
+  va               String?  @db.VarChar(20)
+  deny             String?  @db.VarChar(20)
+  codeName         String?  @map("code_name") @db.Text
+  statusCardb      Int?     @map("status_cardb")
+  paidModel        Int?     @map("paid_model")
+  optype           String?  @db.VarChar(10)
+  optypeDes        String?  @map("optype_des") @db.VarChar(255)
+  gyear            Int?
+  remark           String?  @db.Text
+  hmainReferIn     String?  @map("hmain_refer_in") @db.VarChar(5)
+  orgGyear         Int?     @map("org_gyear")
+  auditResults     String?  @map("audit_results") @db.Text
+  detail           String?  @db.Text
+  paymentType      String?  @map("payment_type") @db.VarChar(50)
+  sourceFileName   String   @map("source_file_name")
+  uploadedById     String   @map("uploaded_by_id")
+  uploadedAt       DateTime @default(now()) @map("uploaded_at")
+  uploadBatchId    String?  @map("upload_batch_id")
+  uploadBatch      UploadBatch? @relation(fields: [uploadBatchId], references: [id])
+
+  @@index([tranId])
+  @@index([uploadedAt])
+  @@map("eclaim_transaction_data")
+}
