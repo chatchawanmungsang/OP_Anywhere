@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack",
+    "dev": "cross-env NODE_OPTIONS=--max-old-space-size=8192 next dev --webpack",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
@@ -12,6 +12,8 @@
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "db:setup": "prisma migrate dev --name init && tsx prisma/seed.ts",
+    "worker:import": "tsx scripts/import-worker.ts",
+    "prune": "tsx scripts/prune-cli.ts",
     "postinstall": "prisma generate"
   },
   "prisma": {
@@ -24,6 +26,7 @@
     "next-auth": "^5.0.0-beta.31",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "server-only": "^0.0.1",
     "xlsx": "^0.18.5",
     "zod": "^4.4.3"
   },
@@ -33,6 +36,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "cross-env": "^10.1.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
     "prisma": "^6.19.3",

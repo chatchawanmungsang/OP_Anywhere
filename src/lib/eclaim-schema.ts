@@ -1,5 +1,3 @@
-import "server-only";
-
 import { Decimal } from "@prisma/client/runtime/library";
 import type { UploadTargetType } from "./eclaim-upload";
 
@@ -231,20 +229,37 @@ export function buildHeaderIndexMapFromRow(
   return map;
 }
 
+export type RowImportMeta = {
+  sourceFileName: string;
+  uploadedById: string;
+  uploadBatchId: string;
+  importYearThai: number;
+  importMonthThai: number;
+  importPeriod: number;
+  importFileName: string;
+  importUploadedAt: Date;
+  sourceSheetIndex?: number;
+};
+
 export function rowValuesToRecord(
   values: (string | null)[],
   headerIndexMap: Map<number, ColumnDef>,
-  meta: {
-    sourceFileName: string;
-    uploadedById: string;
-    uploadBatchId: string;
-  },
+  meta: RowImportMeta,
 ): Record<string, unknown> {
   const record: Record<string, unknown> = {
     sourceFileName: meta.sourceFileName,
     uploadedById: meta.uploadedById,
     uploadBatchId: meta.uploadBatchId,
+    importYearThai: meta.importYearThai,
+    importMonthThai: meta.importMonthThai,
+    importPeriod: meta.importPeriod,
+    importFileName: meta.importFileName,
+    importUploadedAt: meta.importUploadedAt,
   };
+
+  if (meta.sourceSheetIndex != null) {
+    record.sourceSheetIndex = meta.sourceSheetIndex;
+  }
 
   for (const [index, colDef] of headerIndexMap) {
     record[colDef.prismaField] = coerceValue(values[index] ?? null, colDef.type);

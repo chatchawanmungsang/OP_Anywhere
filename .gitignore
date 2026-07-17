@@ -50,3 +50,9 @@ tmp-xlsx-*/
 # local scratch folders
 /OP/
 /op69/
+/OP_Data/
+
+
+# uploaded Excel archives (original files)
+/data/archive/
+/data/inbox/

@@ -14,8 +14,11 @@ enum Role {
 }
 
 enum UploadStatus {
+  SCHEDULED
+  PROCESSING
   SUCCESS
   FAILED
+  CANCELLED
 }
 
 enum UploadTarget {
@@ -36,17 +39,34 @@ model User {
 }
 
 model UploadBatch {
-  id            String       @id @default(cuid())
-  fileName      String
-  target        UploadTarget?
-  rowCount      Int          @default(0)
-  uploadedById  String
-  uploadedBy    User         @relation(fields: [uploadedById], references: [id])
-  status        UploadStatus
-  errorMessage  String?
-  createdAt     DateTime     @default(now())
-  summaries     EclaimTransactionSummary[]
-  details       EclaimTransactionData[]
+  id               String       @id @default(cuid())
+  fileName         String
+  target           UploadTarget?
+  rowCount         Int          @default(0)
+  rowsSkipped      Int          @default(0)
+  uploadedById     String
+  uploadedBy       User         @relation(fields: [uploadedById], references: [id])
+  status           UploadStatus
+  errorMessage     String?
+
+  filterProv1      String
+  filterProv2      String
+  dataYearThai     Int
+  dataMonthThai    Int
+  dataPeriod       Int
+
+  archivedFilePath String?
+  fileSizeBytes    BigInt?
+  scheduledAt      DateTime
+  startedAt        DateTime?
+  completedAt      DateTime?
+  progressRows     Int          @default(0)
+  sheetsProcessed  Int          @default(0)
+  rowsPerSheet     Json?
+
+  createdAt        DateTime     @default(now())
+  summaries        EclaimTransactionSummary[]
+  details          EclaimTransactionData[]
 }
 
 model EclaimTransactionSummary {
@@ -138,9 +158,15 @@ model EclaimTransactionSummary {
   uploadedAt       DateTime @default(now()) @map("uploaded_at")
   uploadBatchId    String?  @map("upload_batch_id")
   uploadBatch      UploadBatch? @relation(fields: [uploadBatchId], references: [id])
+  importYearThai   Int      @map("import_year_thai")
+  importMonthThai  Int      @map("import_month_thai")
+  importPeriod     Int      @map("import_period")
+  importFileName   String   @map("import_file_name")
+  importUploadedAt DateTime @map("import_uploaded_at")
 
   @@index([tranId])
   @@index([uploadedAt])
+  @@index([importYearThai, importMonthThai, importPeriod])
   @@map("eclaim_transaction_summary")
 }
 
@@ -215,8 +241,15 @@ model EclaimTransactionData {
   uploadedAt       DateTime @default(now()) @map("uploaded_at")
   uploadBatchId    String?  @map("upload_batch_id")
   uploadBatch      UploadBatch? @relation(fields: [uploadBatchId], references: [id])
+  importYearThai   Int      @map("import_year_thai")
+  importMonthThai  Int      @map("import_month_thai")
+  importPeriod     Int      @map("import_period")
+  importFileName   String   @map("import_file_name")
+  importUploadedAt DateTime @map("import_uploaded_at")
+  sourceSheetIndex Int?     @map("source_sheet_index")
 
   @@index([tranId])
   @@index([uploadedAt])
+  @@index([importYearThai, importMonthThai, importPeriod])
   @@map("eclaim_transaction_data")
 }

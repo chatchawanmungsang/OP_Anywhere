@@ -1,10 +1,9 @@
 import { auth } from "@/auth";
 import { canUpload } from "@/lib/roles";
-import { processExcelUpload } from "@/lib/upload-service";
+import { stageUpload } from "@/lib/upload-service";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
 
 export async function POST(request: Request) {
   const session = await auth();
@@ -25,7 +24,22 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await processExcelUpload(file, session.user.id);
+    const dataYearThai = Number(formData.get("dataYearThai"));
+    const dataMonthThai = Number(formData.get("dataMonthThai"));
+    const dataPeriod = Number(formData.get("dataPeriod"));
+    const filterProv1 = String(formData.get("filterProv1") ?? "").trim();
+    const filterProv2 = String(formData.get("filterProv2") ?? "").trim();
+
+    const result = await stageUpload({
+      file,
+      userId: session.user.id,
+      dataYearThai,
+      dataMonthThai,
+      dataPeriod,
+      filterProv1,
+      filterProv2,
+    });
+
     return NextResponse.json(result, { status: result.ok ? 200 : 400 });
   } catch (error) {
     const message =
