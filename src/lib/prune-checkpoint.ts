@@ -20,6 +20,8 @@ export type SheetCheckpoint = {
   estimatedMaxRow: number | null;
   prov1Col?: string;
   prov2Col?: string;
+  subFundCol?: string;
+  sumsCostCol?: string;
   /** Last Excel row number (r="N") fully processed — reliable resume marker. */
   lastRowNum?: number;
   /** @deprecated Byte offset — only used when aligned to a row boundary. */
@@ -34,6 +36,8 @@ export type PruneCheckpoint = {
   mtimeMs: number;
   filterProv1: string;
   filterProv2: string;
+  filterSubFundContains: string;
+  filterSumsCostEquals: number;
   target: UploadTargetType;
   workDir: string;
   completedSheets: SheetCheckpoint[];
@@ -102,6 +106,8 @@ export function findResumableCheckpoint(
   mtimeMs: number,
   filterProv1: string,
   filterProv2: string,
+  filterSubFundContains: string,
+  filterSumsCostEquals: number,
 ): PruneCheckpoint | null {
   const workDir = jobWorkDir(fileName);
   const checkpoint = loadCheckpoint(workDir);
@@ -110,7 +116,9 @@ export function findResumableCheckpoint(
   if (checkpoint.fileSize !== fileSize || checkpoint.mtimeMs !== mtimeMs) return null;
   if (
     checkpoint.filterProv1 !== filterProv1 ||
-    checkpoint.filterProv2 !== filterProv2
+    checkpoint.filterProv2 !== filterProv2 ||
+    checkpoint.filterSubFundContains !== filterSubFundContains ||
+    checkpoint.filterSumsCostEquals !== filterSumsCostEquals
   ) {
     return null;
   }

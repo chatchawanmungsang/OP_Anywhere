@@ -23,7 +23,8 @@ import {
   trimWorkbookToSheets,
   type SheetEntry,
 } from "./xlsx-stream-core";
-import { streamFilterSheetFromFile } from "./xlsx-stream-write";
+import { streamFilterSheetFromFile, readFirstOutputRowFromSheet } from "./xlsx-stream-write";
+import { provFilterFromColumns } from "./xlsx-prov-filter";
 
 export type PruneResult = {
   outputPath: string;
@@ -47,6 +48,8 @@ export type PruneProgressEvent = {
 export type PruneOptions = {
   filterProv1: string;
   filterProv2: string;
+  filterSubFundContains: string;
+  filterSumsCostEquals: number;
   outputDir: string;
   resume?: boolean;
   maxRuntimeMs?: number;
@@ -143,6 +146,57 @@ function buildCheckpoint(
   };
 }
 
+async function resolveSheet1Fallback(
+  workDir: string,
+  sheets: SheetEntry[],
+  completedSheets: SheetCheckpoint[],
+  filterProv1: string,
+  filterProv2: string,
+  filterSubFundContains: string,
+  filterSumsCostEquals: number,
+): Promise<{
+  provFilter: ReturnType<typeof provFilterFromColumns>;
+  headerRowXml: string | null;
+} | null> {
+  const sheet1Done = completedSheets.find((s) => s.sheetIndex === 1);
+  if (
+    !sheet1Done?.prov1Col ||
+    !sheet1Done.prov2Col ||
+    !sheet1Done.subFundCol ||
+    !sheet1Done.sumsCostCol
+  ) {
+    return null;
+  }
+
+  const sheet1 = sheets.find((s) => s.sheetIndex === 1);
+  if (!sheet1) return null;
+
+  const sheet1Path = sheetOutputPath(workDir, sheet1);
+  let headerRowXml: string | null = null;
+  if (existsSync(sheet1Path)) {
+    headerRowXml = await readFirstOutputRowFromSheet(sheet1Path);
+  }
+  if (!headerRowXml) {
+    headerRowXml = await readFirstOutputRowFromSheet(
+      sourceSheetPath(workDir, sheet1),
+    );
+  }
+
+  return {
+    provFilter: provFilterFromColumns(
+      sheet1Done.prov1Col,
+      sheet1Done.prov2Col,
+      sheet1Done.subFundCol,
+      sheet1Done.sumsCostCol,
+      filterProv1,
+      filterProv2,
+      filterSubFundContains,
+      filterSumsCostEquals,
+    ),
+    headerRowXml,
+  };
+}
+
 export async function pruneXlsxFile(
   xlsxPath: string,
   target: UploadTargetType,
@@ -165,7 +219,9 @@ export async function pruneXlsxFile(
       existingCheckpoint.fileSize !== fileSize ||
       existingCheckpoint.mtimeMs !== mtimeMs ||
       existingCheckpoint.filterProv1 !== options.filterProv1 ||
-      existingCheckpoint.filterProv2 !== options.filterProv2)
+      existingCheckpoint.filterProv2 !== options.filterProv2 ||
+      existingCheckpoint.filterSubFundContains !== options.filterSubFundContains ||
+      existingCheckpoint.filterSumsCostEquals !== options.filterSumsCostEquals)
   ) {
     clearJobWorkDir(persistentWorkDir);
     existingCheckpoint = null;
@@ -186,6 +242,8 @@ export async function pruneXlsxFile(
     mtimeMs,
     filterProv1: options.filterProv1,
     filterProv2: options.filterProv2,
+    filterSubFundContains: options.filterSubFundContains,
+    filterSumsCostEquals: options.filterSumsCostEquals,
     target,
     workDir: persistentWorkDir,
   };
@@ -247,6 +305,25 @@ export async function pruneXlsxFile(
       const sheetPath = sheetOutputPath(workDir, sheet);
       mkdirSync(path.dirname(sheetPath), { recursive: true });
 
+      const sheet1Fallback =
+        sheet.sheetIndex > 1
+          ? await resolveSheet1Fallback(
+              workDir,
+              sheets,
+              completedSheets,
+              options.filterProv1,
+              options.filterProv2,
+              options.filterSubFundContains,
+              options.filterSumsCostEquals,
+            )
+          : null;
+
+      if (sheet.sheetIndex > 1 && !sheet1Fallback) {
+        throw new Error(
+          `Sheet ${sheet.sheetIndex} ต้องทำ Sheet 1 ให้เสร็จก่อน — เลือก เริ่มใหม่ (r)`,
+        );
+      }
+
       const srcPath = sourceSheetPath(workDir, sheet);
       const rawResume =
         currentSheetState?.sheetIndex === sheet.sheetIndex
@@ -277,6 +354,8 @@ export async function pruneXlsxFile(
         estimatedMaxRow: resumeSheet?.estimatedMaxRow ?? null,
         prov1Col: resumeSheet?.prov1Col,
         prov2Col: resumeSheet?.prov2Col,
+        subFundCol: resumeSheet?.subFundCol,
+        sumsCostCol: resumeSheet?.sumsCostCol,
         lastRowNum: resumeSheet?.lastRowNum,
         sourceOffset: resumeSheet?.sourceOffset,
         complete: false,
@@ -300,7 +379,15 @@ export async function pruneXlsxFile(
         {
           filterProv1: options.filterProv1,
           filterProv2: options.filterProv2,
+          filterSubFundContains: options.filterSubFundContains,
+          filterSumsCostEquals: options.filterSumsCostEquals,
           sharedStrings,
+          fallbackProvFilter:
+            sheet.sheetIndex > 1 ? sheet1Fallback?.provFilter : undefined,
+          fallbackHeaderRowXml:
+            sheet.sheetIndex > 1
+              ? (sheet1Fallback?.headerRowXml ?? undefined)
+              : undefined,
           resume: resumeSheet
             ? {
                 rowsKept: resumeSheet.rowsKept,
@@ -308,6 +395,8 @@ export async function pruneXlsxFile(
                 appendPartial: existsSync(sheetPath),
                 prov1Col: resumeSheet.prov1Col,
                 prov2Col: resumeSheet.prov2Col,
+                subFundCol: resumeSheet.subFundCol,
+                sumsCostCol: resumeSheet.sumsCostCol,
                 lastRowNum: resumeSheet.lastRowNum,
                 sourceOffset: resumeSheet.sourceOffset,
               }
@@ -321,6 +410,8 @@ export async function pruneXlsxFile(
             runningSheet.estimatedMaxRow = p.estimatedMaxRow;
             runningSheet.prov1Col = p.prov1Col;
             runningSheet.prov2Col = p.prov2Col;
+            runningSheet.subFundCol = p.subFundCol;
+            runningSheet.sumsCostCol = p.sumsCostCol;
             runningSheet.lastRowNum = p.lastRowNum;
             runningSheet.sourceOffset = p.sourceOffset;
 
@@ -349,6 +440,8 @@ export async function pruneXlsxFile(
             runningSheet.estimatedMaxRow = p.estimatedMaxRow;
             runningSheet.prov1Col = p.prov1Col;
             runningSheet.prov2Col = p.prov2Col;
+            runningSheet.subFundCol = p.subFundCol;
+            runningSheet.sumsCostCol = p.sumsCostCol;
             runningSheet.lastRowNum = p.lastRowNum;
             runningSheet.sourceOffset = p.sourceOffset;
             saveCheckpoint(
@@ -394,6 +487,8 @@ export async function pruneXlsxFile(
         estimatedMaxRow: result.estimatedMaxRow,
         prov1Col: result.prov1Col,
         prov2Col: result.prov2Col,
+        subFundCol: result.subFundCol,
+        sumsCostCol: result.sumsCostCol,
         lastRowNum: result.lastRowNum,
         sourceOffset: result.sourceOffset,
         complete: true,

@@ -109,6 +109,8 @@ export function listPruneCandidates(
   state: PruneStateFile,
   filterProv1 = "4000",
   filterProv2 = "4000",
+  filterSubFundContains = "WALKIN",
+  filterSumsCostEquals = 0,
 ): FileListItem[] {
   if (!existsSync(dataDir)) {
     mkdirSync(dataDir, { recursive: true });
@@ -135,6 +137,8 @@ export function listPruneCandidates(
       stat.mtimeMs,
       filterProv1,
       filterProv2,
+      filterSubFundContains,
+      filterSumsCostEquals,
     );
 
     let status: FileListItem["status"] = resolveFileStatus(
@@ -161,6 +165,10 @@ export function listPruneCandidates(
       },
     ];
   });
+}
+
+export function findFirstPendingItem(items: FileListItem[]): FileListItem | null {
+  return items.find((item) => item.status !== "DONE") ?? null;
 }
 
 export function upsertPruneStateEntry(

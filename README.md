@@ -129,11 +129,23 @@ Job statuses: `SCHEDULED` → `PROCESSING` → `SUCCESS` / `FAILED`
 
 ## Excel Prune (local CLI)
 
-Filter SUM/DETAIL `.xlsx` files in `OP_Data` to rows where **PROV1** and **PROV2** match (default `4000`), one file at a time:
+Filter SUM/DETAIL `.xlsx` files in `OP_Data` to rows where **PROV1** and **PROV2** match (default `4000`), **SUB_FUND** contains `WALKIN`, and **SUMS_COST** is `0`, one file at a time:
 
 ```powershell
 npm run prune
 ```
+
+If PowerShell blocks `npm` (`running scripts is disabled`), use either:
+
+```powershell
+npm.cmd run prune
+```
+
+```powershell
+.\prune.cmd
+```
+
+Or open **Command Prompt (cmd)** and run `npm run prune` there.
 
 - Source: `OP_Data/*.xlsx` (SUM = sheet 1, DETAIL = sheets 1–2)
 - Output: `OP_Data/Pruned/{originalName}Prune.xlsx`
@@ -142,4 +154,4 @@ npm run prune
 - Live progress bar + spinner on one line; auto-pauses after 60 min (`PRUNE_MAX_MS`) and saves checkpoint
 - Resume interrupted jobs via `[RESUME]` in the file list (checkpoint in `OP_Data/.prune-tmp/jobs/`)
 
-Optional env vars: `OP_DATA_DIR`, `PRUNE_PROV1`, `PRUNE_PROV2`, `PRUNE_TMP_DIR`, `PRUNE_MAX_MS` (default 3600000 = 1 hour per run).
+Optional env vars: `OP_DATA_DIR`, `PRUNE_PROV1`, `PRUNE_PROV2`, `PRUNE_SUB_FUND_CONTAINS` (default `WALKIN`), `PRUNE_SUMS_COST` (default `0`), `PRUNE_TMP_DIR`, `PRUNE_MAX_MS` (default 3600000 = 1 hour per run).

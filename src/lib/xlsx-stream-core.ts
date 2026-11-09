@@ -81,32 +81,38 @@ export async function loadSharedStringsFromReadable(
   for await (const chunk of source) {
     const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
     buffer += text;
-    let idx = 0;
-    while (idx < buffer.length) {
+
+    while (buffer.length > 0) {
       if (!inSi) {
-        const start = buffer.indexOf("<si>", idx);
+        const start = buffer.indexOf("<si");
         if (start === -1) {
           buffer = buffer.slice(Math.max(0, buffer.length - 8));
           break;
         }
+        const tagEnd = buffer.indexOf(">", start);
+        if (tagEnd === -1) {
+          buffer = buffer.slice(start);
+          break;
+        }
         inSi = true;
         current = "";
-        idx = start + 4;
+        buffer = buffer.slice(tagEnd + 1);
         continue;
       }
 
-      const end = buffer.indexOf("</si>", idx);
+      const end = buffer.indexOf("</si>");
       if (end === -1) {
-        current += buffer.slice(idx);
+        current += buffer;
         buffer = "";
         break;
       }
 
-      const block = current + buffer.slice(idx, end);
+      const block = current + buffer.slice(0, end);
       const parts = [...block.matchAll(/<t[^>]*>([^<]*)<\/t>/g)].map((m) => m[1]);
       strings.push(parts.join(""));
       inSi = false;
-      idx = end + 5;
+      current = "";
+      buffer = buffer.slice(end + 5);
     }
   }
 
@@ -289,6 +295,10 @@ export function ensurePruneSourceExtracted(
     ...sheets.map((s) => s.zipEntry),
   ];
   partialExtractFromXlsx(xlsxPath, srcRoot, entries);
+  const cachePath = path.join(workDir, ".shared-strings.cache.json");
+  if (existsSync(cachePath)) {
+    rmSync(cachePath, { force: true });
+  }
   writeFileSync(
     markerPath,
     JSON.stringify({
@@ -365,17 +375,41 @@ export function isRowBoundaryOffset(filePath: string, offset: number): boolean {
 export function loadSharedStringsCached(workDir: string): Promise<string[]> {
   const cachePath = path.join(workDir, ".shared-strings.cache.json");
   const sourcePath = sourceSharedStringsPath(workDir);
+  if (!existsSync(sourcePath)) return Promise.resolve([]);
+
+  const sourceSize = statSync(sourcePath).size;
+
   if (existsSync(cachePath)) {
     try {
-      return Promise.resolve(JSON.parse(readFileSync(cachePath, "utf8")) as string[]);
+      const raw = JSON.parse(readFileSync(cachePath, "utf8")) as
+        | string[]
+        | { sourceSize?: number; strings?: string[] };
+      const cachedStrings = Array.isArray(raw) ? raw : raw.strings;
+      const cachedSize = Array.isArray(raw) ? null : raw.sourceSize;
+      if (
+        Array.isArray(cachedStrings) &&
+        cachedStrings.length > 0 &&
+        (cachedSize == null || cachedSize === sourceSize)
+      ) {
+        return Promise.resolve(cachedStrings);
+      }
     } catch {
       // rebuild below
     }
   }
-  if (!existsSync(sourcePath)) return Promise.resolve([]);
+
   return loadSharedStrings(sourcePath).then((strings) => {
+    if (strings.length === 0 && sourceSize > 1024) {
+      throw new Error(
+        "Could not parse sharedStrings.xml — ลบโฟลเดอร์ .prune-tmp แล้วรันใหม่",
+      );
+    }
     try {
-      writeFileSync(cachePath, JSON.stringify(strings), "utf8");
+      writeFileSync(
+        cachePath,
+        JSON.stringify({ sourceSize, strings }),
+        "utf8",
+      );
     } catch {
       // ignore cache write errors
     }
@@ -491,6 +525,16 @@ export function listXlsxZipEntries(xlsxPath: string): string[] {
 }
 
 export function assertValidXlsxZip(xlsxPath: string): void {
+  const fd = openSync(xlsxPath, "r");
+  const magic = Buffer.alloc(4);
+  readSync(fd, magic, 0, 4, 0);
+  closeSync(fd);
+  if (magic[0] !== 0x50 || magic[1] !== 0x4b) {
+    throw new Error(
+      "Output .xlsx is not a ZIP archive (Windows tar -a bug) — rebuild failed",
+    );
+  }
+
   const entries = listXlsxZipEntries(xlsxPath);
   const bad = entries.filter(
     (e) =>
@@ -646,7 +690,8 @@ export function packWorkbookZip(workDir: string, outputPath: string) {
     throw new Error("Nothing to pack into .xlsx");
   }
 
-  runTar(["-a", "-cf", tempName, ...files], workDir);
+  // bsdtar on Windows ignores -a for .xlsx and writes ustar; Excel needs ZIP (PK).
+  runTar(["--format", "zip", "-cf", tempName, ...files], workDir);
 
   copyFileSync(tempOut, outputPath);
   unlinkSync(tempOut);

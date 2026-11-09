@@ -11,6 +11,7 @@ import {
   headerRowHasData,
   provFilterFromColumns,
   rowMatchesProvFast,
+  tryBuildProvColumnFilter,
   type ProvColumnFilter,
 } from "./xlsx-prov-filter";
 
@@ -18,6 +19,7 @@ const DEFAULT_SHEET_SUFFIX = "</sheetData></worksheet>";
 const WRITE_BUFFER_BYTES = 2 * 1024 * 1024;
 const CHECKPOINT_EVERY_DEFAULT = 100_000;
 const PROGRESS_EVERY = 5_000;
+const HEADER_SCAN_MAX_ROWS = 100;
 
 export type FilterSheetProgress = {
   rowsKept: number;
@@ -26,6 +28,8 @@ export type FilterSheetProgress = {
   estimatedMaxRow: number | null;
   prov1Col?: string;
   prov2Col?: string;
+  subFundCol?: string;
+  sumsCostCol?: string;
   skippingRows?: boolean;
   lastRowNum?: number;
   sourceOffset?: number;
@@ -38,6 +42,8 @@ export type FilterSheetResume = {
   appendPartial: boolean;
   prov1Col?: string;
   prov2Col?: string;
+  subFundCol?: string;
+  sumsCostCol?: string;
   /** @deprecated Legacy — ignored when lastRowNum is set. */
   rowsScanned?: number;
   lastRowNum?: number;
@@ -47,8 +53,14 @@ export type FilterSheetResume = {
 export type StreamFilterSheetOptions = {
   filterProv1: string;
   filterProv2: string;
+  filterSubFundContains: string;
+  filterSumsCostEquals: number;
   sharedStrings: string[];
   resume?: FilterSheetResume;
+  /** Reuse PROV columns from an earlier sheet (DETAIL sheet 2). */
+  fallbackProvFilter?: ProvColumnFilter;
+  /** Header row XML copied from sheet 1 when sheet 2 has no header row. */
+  fallbackHeaderRowXml?: string;
   checkpointEvery?: number;
   onCheckpoint?: (progress: FilterSheetProgress) => void | Promise<void>;
   shouldStop?: () => boolean;
@@ -62,6 +74,8 @@ export type StreamFilterSheetResult = {
   estimatedMaxRow: number | null;
   prov1Col: string;
   prov2Col: string;
+  subFundCol: string;
+  sumsCostCol: string;
   paused: boolean;
   lastRowNum: number;
   sourceOffset: number;
@@ -81,6 +95,22 @@ export function parseRowNumber(rowXml: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** Drop sparse dimension tag; Excel recalculates on open. */
+export function compactSheetPrefix(prefix: string): string {
+  return prefix.replace(/<dimension\b[^>]*\/>/gi, "");
+}
+
+/** Rewrite row/cell `r` attributes so output rows are contiguous (1, 2, 3…). */
+export function renumberRowXml(rowXml: string, newRowNum: number): string {
+  const rowStr = String(newRowNum);
+  let out = rowXml.replace(/(<row\b[^>]*\br=")\d+(")/i, `$1${rowStr}$2`);
+  out = out.replace(
+    /(<c\b[^>]*\br=")([A-Z]+)\d+(")/gi,
+    `$1$2${rowStr}$3`,
+  );
+  return out;
+}
+
 async function readFirstRowFromSheetFile(
   sheetPath: string,
 ): Promise<string | null> {
@@ -89,6 +119,12 @@ async function readFirstRowFromSheetFile(
     return row;
   }
   return null;
+}
+
+export async function readFirstOutputRowFromSheet(
+  sheetPath: string,
+): Promise<string | null> {
+  return readFirstRowFromSheetFile(sheetPath);
 }
 
 /** Track bytes consumed from disk (excluding unread buffer tail). */
@@ -185,18 +221,27 @@ export async function streamFilterSheetFromFile(
   });
 
   if (!resuming) {
-    writer.write(prefix);
+    writer.write(compactSheetPrefix(prefix));
   }
 
   let provFilter: ProvColumnFilter | null = null;
 
   if (resuming) {
-    if (resume?.prov1Col && resume?.prov2Col) {
+    if (
+      resume?.prov1Col &&
+      resume?.prov2Col &&
+      resume?.subFundCol &&
+      resume?.sumsCostCol
+    ) {
       provFilter = provFilterFromColumns(
         resume.prov1Col,
         resume.prov2Col,
+        resume.subFundCol,
+        resume.sumsCostCol,
         options.filterProv1,
         options.filterProv2,
+        options.filterSubFundContains,
+        options.filterSumsCostEquals,
       );
     } else {
       const headerRow = await readFirstRowFromSheetFile(destPath);
@@ -210,6 +255,8 @@ export async function streamFilterSheetFromFile(
         sharedStrings,
         options.filterProv1,
         options.filterProv2,
+        options.filterSubFundContains,
+        options.filterSumsCostEquals,
       );
     }
   }
@@ -225,6 +272,24 @@ export async function streamFilterSheetFromFile(
   let liveEstimatedMaxRow = estimatedMaxRow;
   let writeBuffer = "";
   let skippingRows = false;
+  let headerScanRows = 0;
+  // Header = row 1; data rows continue at 2… (rowsKept counts data rows only).
+  let outputRowNum = resuming ? rowsKept + 2 : 1;
+
+  function writeFallbackHeader(): void {
+    if (headerWritten || !options.fallbackProvFilter) return;
+    provFilter = options.fallbackProvFilter;
+    headerWritten = true;
+    if (options.fallbackHeaderRowXml) {
+      queueWrite(renumberRowXml(options.fallbackHeaderRowXml, outputRowNum));
+      outputRowNum++;
+    }
+  }
+
+  // DETAIL sheet 2+: reuse sheet-1 PROV columns; all source rows are data.
+  if (!resuming && options.fallbackProvFilter) {
+    writeFallbackHeader();
+  }
 
   function flushWrites() {
     if (writeBuffer.length === 0) return;
@@ -247,6 +312,8 @@ export async function streamFilterSheetFromFile(
       estimatedMaxRow: liveEstimatedMaxRow,
       prov1Col: provFilter?.prov1Col,
       prov2Col: provFilter?.prov2Col,
+      subFundCol: provFilter?.subFundCol,
+      sumsCostCol: provFilter?.sumsCostCol,
       skippingRows,
       lastRowNum,
       sourceOffset: lastEndOffset,
@@ -280,6 +347,8 @@ export async function streamFilterSheetFromFile(
       estimatedMaxRow: liveEstimatedMaxRow,
       prov1Col: provFilter.prov1Col,
       prov2Col: provFilter.prov2Col,
+      subFundCol: provFilter.subFundCol,
+      sumsCostCol: provFilter.sumsCostCol,
       paused: false,
       lastRowNum,
       sourceOffset: readStart,
@@ -301,21 +370,40 @@ export async function streamFilterSheetFromFile(
 
     if (!headerWritten) {
       if (!headerRowHasData(rowXml)) continue;
-      provFilter = buildProvColumnFilter(
+
+      const headerFilter = tryBuildProvColumnFilter(
         rowXml,
         sharedStrings,
         options.filterProv1,
         options.filterProv2,
+        options.filterSubFundContains,
+        options.filterSumsCostEquals,
       );
-      queueWrite(rowXml);
-      headerWritten = true;
-      const rowNum = parseRowNumber(rowXml);
-      if (rowNum != null) {
-        lastRowNum = rowNum;
-        rowsScanned = rowNum;
+
+      if (headerFilter) {
+        provFilter = headerFilter;
+        queueWrite(renumberRowXml(rowXml, outputRowNum));
+        outputRowNum++;
+        headerWritten = true;
+        const rowNum = parseRowNumber(rowXml);
+        if (rowNum != null) {
+          lastRowNum = rowNum;
+          rowsScanned = rowNum;
+        }
+        maybeCheckpoint(true);
+        continue;
       }
-      maybeCheckpoint(true);
-      continue;
+
+      headerScanRows++;
+      if (headerScanRows < HEADER_SCAN_MAX_ROWS) {
+        continue;
+      }
+
+      throw new Error(
+        sharedStrings.length === 0
+          ? "Could not load sharedStrings — ลบโฟลเดอร์ .prune-tmp แล้วรันใหม่"
+          : "Sheet is missing PROV1, PROV2, SUB_FUND, or SUMS_COST column.",
+      );
     }
 
     const rowNum = parseRowNumber(rowXml);
@@ -341,7 +429,8 @@ export async function streamFilterSheetFromFile(
     }
 
     if (rowMatchesProvFast(rowXml, provFilter, sharedStrings)) {
-      queueWrite(rowXml);
+      queueWrite(renumberRowXml(rowXml, outputRowNum));
+      outputRowNum++;
       rowsKept++;
     } else {
       rowsSkipped++;
@@ -366,6 +455,10 @@ export async function streamFilterSheetFromFile(
   flushWrites();
 
   if (!headerWritten || !provFilter) {
+    writeFallbackHeader();
+  }
+
+  if (!headerWritten || !provFilter) {
     writer.destroy();
     throw new Error(
       resuming
@@ -384,6 +477,8 @@ export async function streamFilterSheetFromFile(
       estimatedMaxRow: liveEstimatedMaxRow,
       prov1Col: provFilter.prov1Col,
       prov2Col: provFilter.prov2Col,
+      subFundCol: provFilter.subFundCol,
+      sumsCostCol: provFilter.sumsCostCol,
       paused: true,
       lastRowNum,
       sourceOffset: lastEndOffset,
@@ -402,6 +497,8 @@ export async function streamFilterSheetFromFile(
     estimatedMaxRow: liveEstimatedMaxRow,
     prov1Col: provFilter.prov1Col,
     prov2Col: provFilter.prov2Col,
+    subFundCol: provFilter.subFundCol,
+    sumsCostCol: provFilter.sumsCostCol,
     paused: false,
     lastRowNum,
     sourceOffset: lastEndOffset,
