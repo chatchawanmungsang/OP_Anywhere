@@ -1,4 +1,5 @@
 import { AppNav } from "@/components/app-nav";
+import { RunNowButton } from "@/components/run-now-button";
 import { UploadForm } from "@/components/upload-form";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
@@ -45,7 +46,7 @@ export default async function UploadPage() {
           </h1>
           <p className="mt-1 text-sm text-slate-600">
             อัปโหลดไฟล์ PROV SUM/DETAIL ระบุเดือนปีไทย งวด และตัวกรอง PROV1/PROV2
-            — ระบบจะนำเข้าฐานข้อมูลช่วงดึกโดย Worker แยก
+            — เลือกให้ Worker ประมวลผลทันที หรือประมวลผลตามตารางเวลาช่วงดึกได้
           </p>
         </div>
 
@@ -86,12 +87,13 @@ export default async function UploadPage() {
                   <th className="px-3 py-3">Rows</th>
                   <th className="px-3 py-3">Scheduled</th>
                   <th className="px-3 py-3">Uploaded</th>
+                  <th className="px-3 py-3">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {recent.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-3 py-8 text-center text-slate-500">
+                    <td colSpan={9} className="px-3 py-8 text-center text-slate-500">
                       No uploads yet.
                     </td>
                   </tr>
@@ -113,15 +115,22 @@ export default async function UploadPage() {
                         {b.target ?? "—"}
                       </td>
                       <td className="px-3 py-2">
-                        <span
-                          className={statusClass(b.status)}
-                          title={b.errorMessage ?? undefined}
-                        >
-                          {b.status}
-                          {b.status === "PROCESSING" && b.progressRows > 0
-                            ? ` (${b.progressRows})`
-                            : ""}
-                        </span>
+                        <div className="flex flex-col">
+                          <span
+                            className={statusClass(b.status)}
+                            title={b.errorMessage ?? undefined}
+                          >
+                            {b.status}
+                            {b.status === "PROCESSING" && b.progressRows > 0
+                              ? ` (${b.progressRows})`
+                              : ""}
+                          </span>
+                          {b.status === "FAILED" && b.errorMessage ? (
+                            <span className="mt-0.5 max-w-xs truncate text-xs text-red-600" title={b.errorMessage}>
+                              {b.errorMessage}
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-3 py-2">
                         {b.rowCount}
@@ -141,6 +150,16 @@ export default async function UploadPage() {
                         {b.createdAt.toLocaleString("th-TH", {
                           timeZone: "Asia/Bangkok",
                         })}
+                      </td>
+                      <td className="px-3 py-2">
+                        {b.status === "SCHEDULED" &&
+                        b.scheduledAt > new Date() ? (
+                          <RunNowButton batchId={b.id} label="ประมวลผลทันที" />
+                        ) : b.status === "FAILED" ? (
+                          <RunNowButton batchId={b.id} label="ลองใหม่" />
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
                       </td>
                     </tr>
                   ))

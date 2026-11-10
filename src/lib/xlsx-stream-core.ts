@@ -75,50 +75,54 @@ export async function loadSharedStringsFromReadable(
 ): Promise<string[]> {
   const strings: string[] = [];
   let buffer = "";
-  let inSi = false;
-  let current = "";
 
   for await (const chunk of source) {
     const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
     buffer += text;
 
-    while (buffer.length > 0) {
-      if (!inSi) {
-        const start = buffer.indexOf("<si");
-        if (start === -1) {
-          buffer = buffer.slice(Math.max(0, buffer.length - 8));
-          break;
-        }
-        const tagEnd = buffer.indexOf(">", start);
-        if (tagEnd === -1) {
-          buffer = buffer.slice(start);
-          break;
-        }
-        inSi = true;
-        current = "";
-        buffer = buffer.slice(tagEnd + 1);
-        continue;
-      }
-
-      const end = buffer.indexOf("</si>");
-      if (end === -1) {
-        current += buffer;
-        buffer = "";
+    let pos = 0;
+    while (true) {
+      const start = buffer.indexOf("<si", pos);
+      if (start === -1) {
+        // Keep trailing 4 chars in case "<si" is split across chunks
+        buffer = buffer.slice(Math.max(pos, buffer.length - 4));
         break;
       }
-
-      const block = current + buffer.slice(0, end);
-      const parts = [...block.matchAll(/<t[^>]*>([^<]*)<\/t>/g)].map((m) => m[1]);
+      const nextChar = buffer[start + 3];
+      if (
+        nextChar !== undefined &&
+        nextChar !== ">" &&
+        nextChar !== " " &&
+        nextChar !== "/" &&
+        nextChar !== "\t" &&
+        nextChar !== "\r" &&
+        nextChar !== "\n"
+      ) {
+        pos = start + 3;
+        continue;
+      }
+      const tagEnd = buffer.indexOf(">", start + 3);
+      if (tagEnd === -1) {
+        buffer = buffer.slice(start);
+        break;
+      }
+      if (buffer[tagEnd - 1] === "/") {
+        strings.push("");
+        pos = tagEnd + 1;
+        continue;
+      }
+      const end = buffer.indexOf("</si>", tagEnd + 1);
+      if (end === -1) {
+        buffer = buffer.slice(start);
+        break;
+      }
+      const block = buffer.slice(tagEnd + 1, end);
+      const parts = [...block.matchAll(/<t[^>]*>([^<]*)<\/t>/g)].map(
+        (m) => m[1],
+      );
       strings.push(parts.join(""));
-      inSi = false;
-      current = "";
-      buffer = buffer.slice(end + 5);
+      pos = end + 5;
     }
-  }
-
-  if (inSi && current) {
-    const parts = [...current.matchAll(/<t[^>]*>([^<]*)<\/t>/g)].map((m) => m[1]);
-    strings.push(parts.join(""));
   }
 
   return strings;

@@ -8,11 +8,14 @@ import {
   THAI_MONTHS,
 } from "@/lib/import-metadata";
 
+type ScheduleMode = "SCHEDULED" | "IMMEDIATE";
+
 type UploadResult = {
   ok: boolean;
   message: string;
   batchId?: string;
   scheduledAt?: string;
+  scheduleMode?: ScheduleMode;
 };
 
 export function UploadForm() {
@@ -24,6 +27,7 @@ export function UploadForm() {
   const [dataPeriod, setDataPeriod] = useState<string>("1");
   const [filterProv1, setFilterProv1] = useState<string>("");
   const [filterProv2, setFilterProv2] = useState<string>("");
+  const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("SCHEDULED");
   const [pending, startTransition] = useTransition();
 
   const detected = fileName ? detectUploadTarget(fileName) : null;
@@ -67,6 +71,7 @@ export function UploadForm() {
     formData.append("dataPeriod", dataPeriod);
     formData.append("filterProv1", filterProv1.trim());
     formData.append("filterProv2", filterProv2.trim());
+    formData.append("scheduleMode", scheduleMode);
 
     startTransition(async () => {
       try {
@@ -104,7 +109,7 @@ export function UploadForm() {
           {fileName || "Drop or choose a SUM / DETAIL .xlsx file"}
         </span>
         <span className="mt-2 text-sm text-slate-500">
-          Filename must contain SUM or DETAIL. Max 500MB. Import runs overnight.
+          Filename must contain SUM or DETAIL. Max 500MB.
         </span>
         {targetLabel ? (
           <span className="mt-3 rounded-full bg-teal-100 px-3 py-1 text-xs font-medium text-teal-800">
@@ -206,8 +211,65 @@ export function UploadForm() {
         </label>
       </div>
 
+      <fieldset className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 text-sm">
+        <legend className="px-1 font-medium text-slate-800">
+          รูปแบบการประมวลผลของ Worker
+        </legend>
+        <div className="mt-2 grid gap-3 sm:grid-cols-2">
+          <label
+            className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition ${
+              scheduleMode === "IMMEDIATE"
+                ? "border-teal-600 bg-teal-50/60"
+                : "border-slate-200 bg-white hover:border-slate-300"
+            }`}
+          >
+            <input
+              type="radio"
+              name="scheduleMode"
+              value="IMMEDIATE"
+              checked={scheduleMode === "IMMEDIATE"}
+              onChange={() => setScheduleMode("IMMEDIATE")}
+              className="mt-1"
+            />
+            <div>
+              <div className="font-medium text-slate-900">ประมวลผลทันที</div>
+              <div className="text-xs text-slate-500">
+                ส่งเข้าคิวให้ Worker นำเข้าข้อมูลทันทีหลังอัปโหลดเสร็จ
+              </div>
+            </div>
+          </label>
+          <label
+            className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition ${
+              scheduleMode === "SCHEDULED"
+                ? "border-teal-600 bg-teal-50/60"
+                : "border-slate-200 bg-white hover:border-slate-300"
+            }`}
+          >
+            <input
+              type="radio"
+              name="scheduleMode"
+              value="SCHEDULED"
+              checked={scheduleMode === "SCHEDULED"}
+              onChange={() => setScheduleMode("SCHEDULED")}
+              className="mt-1"
+            />
+            <div>
+              <div className="font-medium text-slate-900">
+                ประมวลผลตามตารางเวลา (ช่วงดึก)
+              </div>
+              <div className="text-xs text-slate-500">
+                เก็บไฟล์ไว้ก่อนและให้ Worker นำเข้าตามเวลาที่ตั้งไว้ (ค่าเริ่มต้น 00:00 น.)
+              </div>
+            </div>
+          </label>
+        </div>
+      </fieldset>
+
       <p className="text-xs text-slate-500">
-        นำเข้าเฉพาะแถวที่ PROV1 และ PROV2 ตรงกับที่ระบุ — ประมวลผลช่วงดึก
+        นำเข้าเฉพาะแถวที่ PROV1 และ PROV2 ตรงกับที่ระบุ —{" "}
+        {scheduleMode === "IMMEDIATE"
+          ? "Worker จะเริ่มนำเข้าทันที"
+          : "Worker จะนำเข้าตามตารางเวลาช่วงดึก"}
       </p>
 
       <button
@@ -215,7 +277,11 @@ export function UploadForm() {
         disabled={pending || !canSubmit}
         className="rounded-lg bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-60"
       >
-        {pending ? "กำลังอัปโหลด…" : "อัปโหลด (ประมวลผลช่วงดึก)"}
+        {pending
+          ? "กำลังอัปโหลด…"
+          : scheduleMode === "IMMEDIATE"
+            ? "อัปโหลดและประมวลผลทันที"
+            : "อัปโหลด (ประมวลผลตามตารางเวลา)"}
       </button>
 
       {result ? (

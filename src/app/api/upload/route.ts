@@ -1,6 +1,6 @@
 import { auth } from "@/auth";
 import { canUpload } from "@/lib/roles";
-import { stageUpload } from "@/lib/upload-service";
+import { stageUpload, type ImportScheduleMode } from "@/lib/upload-service";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -29,6 +29,11 @@ export async function POST(request: Request) {
     const dataPeriod = Number(formData.get("dataPeriod"));
     const filterProv1 = String(formData.get("filterProv1") ?? "").trim();
     const filterProv2 = String(formData.get("filterProv2") ?? "").trim();
+    const rawMode = String(formData.get("scheduleMode") ?? "SCHEDULED")
+      .trim()
+      .toUpperCase();
+    const scheduleMode: ImportScheduleMode =
+      rawMode === "IMMEDIATE" ? "IMMEDIATE" : "SCHEDULED";
 
     const result = await stageUpload({
       file,
@@ -38,6 +43,7 @@ export async function POST(request: Request) {
       dataPeriod,
       filterProv1,
       filterProv2,
+      scheduleMode,
     });
 
     return NextResponse.json(result, { status: result.ok ? 200 : 400 });

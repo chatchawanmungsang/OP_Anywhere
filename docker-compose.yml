@@ -9,8 +9,64 @@ services:
       POSTGRES_USER: opanywhere
       POSTGRES_PASSWORD: opanywhere
       POSTGRES_DB: opanywhere
+      TZ: Asia/Bangkok
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opanywhere -d opanywhere"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: op-anywhere-web
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: "postgresql://opanywhere:opanywhere@postgres:5432/opanywhere?schema=public"
+      AUTH_TRUST_HOST: "true"
+      TZ: "Asia/Bangkok"
+      NODE_OPTIONS: "--max-old-space-size=8192"
+    volumes:
+      - ./data:/app/data
+      - ./OP_Data:/app/OP_Data
+    command: >
+      sh -c "npx prisma migrate deploy && npm run db:seed && npm run start"
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: op-anywhere-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: "postgresql://opanywhere:opanywhere@postgres:5432/opanywhere?schema=public"
+      TZ: "Asia/Bangkok"
+      NODE_OPTIONS: "--max-old-space-size=8192"
+      WORKER_POLL_INTERVAL_SECONDS: "10"
+    volumes:
+      - ./data:/app/data
+      - ./OP_Data:/app/OP_Data
+    command: >
+      sh -c "echo '[worker] Waiting for due jobs (polling every 10s)...';
+      while true; do
+        npm run worker:import || true;
+        sleep $${WORKER_POLL_INTERVAL_SECONDS:-10};
+      done"
 
 volumes:
   postgres_data:

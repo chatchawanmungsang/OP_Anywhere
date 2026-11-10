@@ -18,6 +18,8 @@ import path from "path";
 import { pipeline } from "stream/promises";
 import { Readable } from "stream";
 
+export type ImportScheduleMode = "SCHEDULED" | "IMMEDIATE";
+
 export type StageUploadInput = {
   file: File;
   userId: string;
@@ -26,6 +28,7 @@ export type StageUploadInput = {
   dataPeriod: number;
   filterProv1: string;
   filterProv2: string;
+  scheduleMode?: ImportScheduleMode;
 };
 
 export type StageUploadResult = {
@@ -33,9 +36,10 @@ export type StageUploadResult = {
   message: string;
   batchId?: string;
   scheduledAt?: string;
+  scheduleMode?: ImportScheduleMode;
 };
 
-function getArchiveRoot(): string {
+export function getArchiveRoot(): string {
   const custom = process.env.UPLOAD_ARCHIVE_DIR;
   if (custom) return path.resolve(custom);
   return path.join(process.cwd(), "data", "archive");
@@ -88,7 +92,10 @@ export async function stageUpload(
 
   const target =
     targetType === "SUMMARY" ? UploadTarget.SUMMARY : UploadTarget.DETAIL;
-  const scheduledAt = computeNextScheduleAt();
+  const scheduleMode: ImportScheduleMode =
+    input.scheduleMode === "IMMEDIATE" ? "IMMEDIATE" : "SCHEDULED";
+  const scheduledAt =
+    scheduleMode === "IMMEDIATE" ? new Date() : computeNextScheduleAt();
   const filterProv1 = input.filterProv1.trim();
   const filterProv2 = input.filterProv2.trim();
 
@@ -115,13 +122,15 @@ export async function stageUpload(
     batch.id,
     file.name,
   );
-  const archivedFilePath = path.join(getArchiveRoot(), relativePath);
+  const fullDestPath = path.join(getArchiveRoot(), relativePath);
+  // Store portable relative path (e.g. "data/archive/2569/09/period-2/...") so host and Docker containers both resolve it cleanly
+  const storedArchivePath = `data/archive/${relativePath}`;
 
   try {
-    await writeUploadToPath(file, archivedFilePath);
+    await writeUploadToPath(file, fullDestPath);
     await prisma.uploadBatch.update({
       where: { id: batch.id },
-      data: { archivedFilePath },
+      data: { archivedFilePath: storedArchivePath },
     });
   } catch (error) {
     const message =
@@ -144,10 +153,16 @@ export async function stageUpload(
     timeStyle: "short",
   });
 
+  const message =
+    scheduleMode === "IMMEDIATE"
+      ? `อัปโหลดสำเร็จ (${periodLabel}, PROV1=${filterProv1}, PROV2=${filterProv2}). ส่งเข้าคิวให้ Worker ประมวลผลทันทีแล้ว`
+      : `อัปโหลดสำเร็จ (${periodLabel}, PROV1=${filterProv1}, PROV2=${filterProv2}). จะนำเข้าฐานข้อมูลตามตารางเวลาประมาณ ${scheduleLabel}`;
+
   return {
     ok: true,
     batchId: batch.id,
     scheduledAt: scheduledAt.toISOString(),
-    message: `อัปโหลดสำเร็จ (${periodLabel}, PROV1=${filterProv1}, PROV2=${filterProv2}). จะนำเข้าฐานข้อมูลประมาณ ${scheduleLabel}`,
+    scheduleMode,
+    message,
   };
 }

@@ -7,11 +7,45 @@ import {
   UploadTarget,
   type UploadBatch,
 } from "@prisma/client";
+import { existsSync } from "fs";
 import path from "path";
 
 function batchSizeForTarget(target: UploadTarget): number {
   const env = Number(process.env.WORKER_BATCH_SIZE ?? "500");
   return target === UploadTarget.DETAIL ? Math.min(env, 300) : env;
+}
+
+/**
+ * Resolve archivedFilePath across Windows host and Linux Docker container.
+ * Handles legacy Windows absolute paths like "C:\...\data\archive\2569\..."
+ * as well as portable relative paths like "data/archive/2569/...".
+ */
+export function resolveArchivedFilePath(storedPath: string): string {
+  const normalized = storedPath.replace(/\\/g, "/");
+  const archiveMarker = "/data/archive/";
+  const markerIdx = normalized.lastIndexOf(archiveMarker);
+  if (markerIdx !== -1) {
+    const relFromMarker = normalized.slice(markerIdx + archiveMarker.length);
+    const archiveRoot = process.env.UPLOAD_ARCHIVE_DIR
+      ? path.resolve(process.env.UPLOAD_ARCHIVE_DIR)
+      : path.join(process.cwd(), "data", "archive");
+    const candidate = path.join(archiveRoot, relFromMarker);
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  if (normalized.startsWith("data/archive/")) {
+    const relFromMarker = normalized.slice("data/archive/".length);
+    const archiveRoot = process.env.UPLOAD_ARCHIVE_DIR
+      ? path.resolve(process.env.UPLOAD_ARCHIVE_DIR)
+      : path.join(process.cwd(), "data", "archive");
+    return path.join(archiveRoot, relFromMarker);
+  }
+
+  return path.isAbsolute(storedPath)
+    ? storedPath
+    : path.join(process.cwd(), normalized);
 }
 
 export async function claimNextDueJob(): Promise<UploadBatch | null> {
@@ -47,9 +81,7 @@ export async function processUploadJob(batchId: string): Promise<void> {
     throw new Error("Upload job not found or missing archived file.");
   }
 
-  const xlsxPath = path.isAbsolute(batch.archivedFilePath)
-    ? batch.archivedFilePath
-    : path.join(process.cwd(), batch.archivedFilePath);
+  const xlsxPath = resolveArchivedFilePath(batch.archivedFilePath);
 
   const targetType: UploadTargetType =
     batch.target === UploadTarget.SUMMARY ? "SUMMARY" : "DETAIL";
@@ -66,6 +98,17 @@ export async function processUploadJob(batchId: string): Promise<void> {
   };
 
   try {
+    // Clear any partial rows from previous attempts of this batch before importing
+    if (batch.target === UploadTarget.SUMMARY) {
+      await prisma.eclaimTransactionSummary.deleteMany({
+        where: { uploadBatchId: batch.id },
+      });
+    } else {
+      await prisma.eclaimTransactionData.deleteMany({
+        where: { uploadBatchId: batch.id },
+      });
+    }
+
     const imported = await streamImportXlsx(xlsxPath, targetType, importMeta, {
       batchSize: batchSizeForTarget(batch.target),
       filterProv1: batch.filterProv1,

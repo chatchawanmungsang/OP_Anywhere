@@ -2,10 +2,11 @@
 
 import { auth, signIn, signOut } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { canDeleteData, canManageUsers } from "@/lib/roles";
+import { canDeleteData, canManageUsers, canUpload } from "@/lib/roles";
 import {
   Prisma,
   Role,
+  UploadStatus,
   UploadTarget,
 } from "@prisma/client";
 import bcrypt from "bcryptjs";
@@ -68,6 +69,47 @@ export async function clearEclaimDataAction(
   return {
     ok: true,
     message: "Cleared all rows from eclaim_transaction_data.",
+  };
+}
+
+export async function runUploadBatchNowAction(
+  batchId: string,
+): Promise<ActionResult> {
+  const session = await auth();
+  if (!session?.user || !canUpload(session.user.role)) {
+    return { ok: false, message: "You do not have permission to run imports." };
+  }
+
+  const batch = await prisma.uploadBatch.findUnique({ where: { id: batchId } });
+  if (!batch) {
+    return { ok: false, message: "ไม่พบรายการอัปโหลดนี้" };
+  }
+
+  if (
+    batch.status !== UploadStatus.SCHEDULED &&
+    batch.status !== UploadStatus.FAILED
+  ) {
+    return {
+      ok: false,
+      message:
+        "เฉพาะรายการที่อยู่ในสถานะ SCHEDULED หรือ FAILED เท่านั้นที่สั่งประมวลผลได้",
+    };
+  }
+
+  await prisma.uploadBatch.update({
+    where: { id: batchId },
+    data: {
+      status: UploadStatus.SCHEDULED,
+      scheduledAt: new Date(),
+      errorMessage: null,
+      progressRows: 0,
+    },
+  });
+
+  revalidatePath("/upload");
+  return {
+    ok: true,
+    message: `สั่งให้ Worker ประมวลผลไฟล์ ${batch.fileName} ทันทีแล้ว`,
   };
 }
 
