@@ -4,7 +4,7 @@ services:
     container_name: op-anywhere-db
     restart: unless-stopped
     ports:
-      - "5433:5432"
+      - "${POSTGRES_PORT:-5434}:5432"
     environment:
       POSTGRES_USER: opanywhere
       POSTGRES_PASSWORD: opanywhere
@@ -28,7 +28,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "3000:3000"
+      - "${WEB_PORT:-3010}:3000"
     env_file:
       - .env
     environment:
