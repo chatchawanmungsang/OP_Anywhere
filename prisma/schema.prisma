@@ -218,8 +218,8 @@ model EclaimTransactionData {
   itemName         String?  @map("item_name") @db.Text
   dosageform       String?  @db.VarChar(255)
   drugUnit         String?  @map("หน่วยยา") @db.VarChar(100)
-  nhsoDrugGroup    String?  @map("กลุ่มยาตามบัญชีฯ (NHSO)") @db.VarChar(255)
-  diseaseDrugGroup String?  @map("กลุ่มยาตามโรค") @db.VarChar(255)
+  nhsoDrugGroup    String?  @map("กลุ่มยาตามบัญชีฯ (NHSO)") @db.Text
+  diseaseDrugGroup String?  @map("กลุ่มยาตามโรค") @db.Text
   stmtPeriod       String?  @map("stmt_period") @db.VarChar(50)
   orgDateSend      String?  @map("org_date_send") @db.VarChar(8)
   va               String?  @db.VarChar(20)
@@ -231,7 +231,7 @@ model EclaimTransactionData {
   optypeDes        String?  @map("optype_des") @db.VarChar(255)
   gyear            Int?
   remark           String?  @db.Text
-  hmainReferIn     String?  @map("hmain_refer_in") @db.VarChar(5)
+  hmainReferIn     String?  @map("hmain_refer_in") @db.VarChar(255)
   orgGyear         Int?     @map("org_gyear")
   auditResults     String?  @map("audit_results") @db.Text
   detail           String?  @db.Text

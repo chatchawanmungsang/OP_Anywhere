@@ -90,10 +90,17 @@ function printHeader() {
   console.log(matrixBanner());
   console.log(
     mx.text("OP_Data") +
-      mx.dim(" — เลือกไฟล์ที่จะ Prune ") +
-      mx.dim(
-        `(PROV1=${FILTER_PROV1}, PROV2=${FILTER_PROV2}, SUB_FUND∋${FILTER_SUB_FUND}, SUMS_COST=${FILTER_SUMS_COST})`,
-      ),
+      mx.dim(" — เลือกไฟล์ที่จะ Prune "),
+  );
+  console.log(
+    mx.dim(
+      `  • SUM:    PROV1=${FILTER_PROV1}, PROV2=${FILTER_PROV2}, SUB_FUND∋${FILTER_SUB_FUND}, SUMS_COST=${FILTER_SUMS_COST}`,
+    ),
+  );
+  console.log(
+    mx.dim(
+      "  • DETAIL: เก็บเฉพาะแถวที่ TRAN_ID ตรงกับไฟล์ SUM ในเดือนและงวดเดียวกัน",
+    ),
   );
   console.log(`${mx.dim("Source:")} ${mx.green(DATA_DIR)}`);
   console.log(`${mx.dim("Output:")} ${mx.green(OUTPUT_DIR)}`);

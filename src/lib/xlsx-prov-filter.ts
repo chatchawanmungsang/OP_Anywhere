@@ -3,12 +3,14 @@ import { colRefToIndex, normalizeHeaderName } from "./xlsx-stream-core";
 export type ProvColumnFilter = {
   prov1Col: string;
   prov2Col: string;
-  subFundCol: string;
-  sumsCostCol: string;
+  subFundCol?: string;
+  sumsCostCol?: string;
+  tranIdCol?: string;
   filterProv1: string;
   filterProv2: string;
   filterSubFundContains: string;
   filterSumsCostEquals: number;
+  allowedTranIds?: ReadonlySet<string>;
 };
 
 const CELL_RE = /<c([^>]*)>([\s\S]*?)<\/c>/g;
@@ -35,7 +37,7 @@ function cellValueFromParts(
   return null;
 }
 
-function extractCellByColumn(
+export function extractCellByColumn(
   rowXml: string,
   colLetter: string,
   sharedStrings: string[],
@@ -57,12 +59,38 @@ function parseNumericCell(value: string | null): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+export function normalizeTranId(value: string | null | undefined): string {
+  if (value == null) return "";
+  return value.trim().replace(/,/g, "");
+}
+
 export function rowUsesSharedStrings(rowXml: string): boolean {
   return /\bt="s"/.test(rowXml);
 }
 
-const MISSING_FILTER_COLS =
+const MISSING_SUM_FILTER_COLS =
   "Sheet is missing PROV1, PROV2, SUB_FUND, or SUMS_COST column.";
+const MISSING_DETAIL_FILTER_COLS =
+  "DETAIL sheet is missing TRAN_ID column.";
+
+/** Find column letter for a given header name (case-insensitive). */
+export function findHeaderColumnLetter(
+  headerRowXml: string,
+  sharedStrings: string[],
+  headerName: string,
+): string | null {
+  const target = normalizeHeaderName(headerName).toUpperCase();
+  for (const cell of headerRowXml.matchAll(CELL_RE)) {
+    const col = cellRefColumn(cell[1]);
+    if (!col) continue;
+    const value = cellValueFromParts(cell[1], cell[2], sharedStrings);
+    if (value == null || value === "") continue;
+    if (normalizeHeaderName(value).toUpperCase() === target) {
+      return col;
+    }
+  }
+  return null;
+}
 
 /** Parse header row once → column letters for filter fields. */
 export function buildProvColumnFilter(
@@ -70,13 +98,19 @@ export function buildProvColumnFilter(
   sharedStrings: string[],
   filterProv1: string,
   filterProv2: string,
-  filterSubFundContains: string,
-  filterSumsCostEquals: number,
+  filterSubFundContains = "WALKIN",
+  filterSumsCostEquals = 0,
+  options?: {
+    mode?: "SUMMARY" | "DETAIL_TRAN_ID" | "PROV_ONLY";
+    allowedTranIds?: ReadonlySet<string>;
+  },
 ): ProvColumnFilter {
+  const mode = options?.mode ?? "SUMMARY";
   let prov1Col: string | null = null;
   let prov2Col: string | null = null;
   let subFundCol: string | null = null;
   let sumsCostCol: string | null = null;
+  let tranIdCol: string | null = null;
 
   for (const cell of headerRowXml.matchAll(CELL_RE)) {
     const col = cellRefColumn(cell[1]);
@@ -88,10 +122,46 @@ export function buildProvColumnFilter(
     if (norm === "PROV2") prov2Col = col;
     if (norm === "SUB_FUND") subFundCol = col;
     if (norm === "SUMS_COST") sumsCostCol = col;
+    if (norm === "TRAN_ID") tranIdCol = col;
+  }
+
+  if (mode === "DETAIL_TRAN_ID") {
+    if (!tranIdCol) {
+      throw new Error(MISSING_DETAIL_FILTER_COLS);
+    }
+    return {
+      prov1Col: prov1Col ?? "",
+      prov2Col: prov2Col ?? "",
+      subFundCol: subFundCol ?? undefined,
+      sumsCostCol: sumsCostCol ?? undefined,
+      tranIdCol,
+      filterProv1: filterProv1.trim(),
+      filterProv2: filterProv2.trim(),
+      filterSubFundContains: filterSubFundContains.trim(),
+      filterSumsCostEquals,
+      allowedTranIds: options?.allowedTranIds,
+    };
+  }
+
+  if (mode === "PROV_ONLY") {
+    if (!prov1Col || !prov2Col) {
+      throw new Error("Sheet is missing PROV1 or PROV2 column.");
+    }
+    return {
+      prov1Col,
+      prov2Col,
+      subFundCol: subFundCol ?? undefined,
+      sumsCostCol: sumsCostCol ?? undefined,
+      tranIdCol: tranIdCol ?? undefined,
+      filterProv1: filterProv1.trim(),
+      filterProv2: filterProv2.trim(),
+      filterSubFundContains: filterSubFundContains.trim(),
+      filterSumsCostEquals,
+    };
   }
 
   if (!prov1Col || !prov2Col || !subFundCol || !sumsCostCol) {
-    throw new Error(MISSING_FILTER_COLS);
+    throw new Error(MISSING_SUM_FILTER_COLS);
   }
 
   return {
@@ -99,10 +169,11 @@ export function buildProvColumnFilter(
     prov2Col,
     subFundCol,
     sumsCostCol,
+    tranIdCol: tranIdCol ?? undefined,
     filterProv1: filterProv1.trim(),
     filterProv2: filterProv2.trim(),
     filterSubFundContains: filterSubFundContains.trim(),
-    filterSumsCostEquals: filterSumsCostEquals,
+    filterSumsCostEquals,
   };
 }
 
@@ -114,6 +185,10 @@ export function tryBuildProvColumnFilter(
   filterProv2: string,
   filterSubFundContains = "WALKIN",
   filterSumsCostEquals = 0,
+  options?: {
+    mode?: "SUMMARY" | "DETAIL_TRAN_ID" | "PROV_ONLY";
+    allowedTranIds?: ReadonlySet<string>;
+  },
 ): ProvColumnFilter | null {
   try {
     return buildProvColumnFilter(
@@ -123,6 +198,7 @@ export function tryBuildProvColumnFilter(
       filterProv2,
       filterSubFundContains,
       filterSumsCostEquals,
+      options,
     );
   } catch {
     return null;
@@ -142,12 +218,23 @@ export function readProvValuesFromRow(
   };
 }
 
-/** Fast filter — reads only the cells needed for PROV / SUB_FUND / SUMS_COST. */
+/** Fast filter — supports DETAIL TRAN_ID matching or SUMMARY PROV/SUB_FUND/SUMS_COST matching. */
 export function rowMatchesProvFast(
   rowXml: string,
   filter: ProvColumnFilter,
   sharedStrings: string[],
 ): boolean {
+  if (filter.allowedTranIds && filter.tranIdCol) {
+    const rawTranId = extractCellByColumn(
+      rowXml,
+      filter.tranIdCol,
+      sharedStrings,
+    );
+    const tranId = normalizeTranId(rawTranId);
+    if (tranId === "") return false;
+    return filter.allowedTranIds.has(tranId);
+  }
+
   const prov1 = (
     extractCellByColumn(rowXml, filter.prov1Col, sharedStrings) ?? ""
   ).trim();
@@ -158,22 +245,26 @@ export function rowMatchesProvFast(
     return false;
   }
 
-  const subFund = (
-    extractCellByColumn(rowXml, filter.subFundCol, sharedStrings) ?? ""
-  ).trim();
-  const needle = filter.filterSubFundContains;
-  if (
-    needle !== "" &&
-    !subFund.toUpperCase().includes(needle.toUpperCase())
-  ) {
-    return false;
+  if (filter.subFundCol) {
+    const subFund = (
+      extractCellByColumn(rowXml, filter.subFundCol, sharedStrings) ?? ""
+    ).trim();
+    const needle = filter.filterSubFundContains;
+    if (
+      needle !== "" &&
+      !subFund.toUpperCase().includes(needle.toUpperCase())
+    ) {
+      return false;
+    }
   }
 
-  const sumsCost = parseNumericCell(
-    extractCellByColumn(rowXml, filter.sumsCostCol, sharedStrings),
-  );
-  if (sumsCost !== filter.filterSumsCostEquals) {
-    return false;
+  if (filter.sumsCostCol) {
+    const sumsCost = parseNumericCell(
+      extractCellByColumn(rowXml, filter.sumsCostCol, sharedStrings),
+    );
+    if (sumsCost !== filter.filterSumsCostEquals) {
+      return false;
+    }
   }
 
   return true;
@@ -186,22 +277,28 @@ export function headerRowHasData(headerRowXml: string): boolean {
 export function provFilterFromColumns(
   prov1Col: string,
   prov2Col: string,
-  subFundCol: string,
-  sumsCostCol: string,
+  subFundCol: string | undefined,
+  sumsCostCol: string | undefined,
   filterProv1: string,
   filterProv2: string,
   filterSubFundContains: string,
   filterSumsCostEquals: number,
+  options?: {
+    tranIdCol?: string;
+    allowedTranIds?: ReadonlySet<string>;
+  },
 ): ProvColumnFilter {
   return {
     prov1Col,
     prov2Col,
     subFundCol,
     sumsCostCol,
+    tranIdCol: options?.tranIdCol,
     filterProv1: filterProv1.trim(),
     filterProv2: filterProv2.trim(),
     filterSubFundContains: filterSubFundContains.trim(),
-    filterSumsCostEquals: filterSumsCostEquals,
+    filterSumsCostEquals,
+    allowedTranIds: options?.allowedTranIds,
   };
 }
 

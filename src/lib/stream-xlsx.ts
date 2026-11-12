@@ -60,8 +60,10 @@ async function importSingleSheet(
   sharedStrings: string[],
   options: StreamImportOptions,
   referenceHeaders: string[] | null,
+  referenceHeaderIndexMap: Map<number, ReturnType<typeof columnsForTarget>[0]> | null,
 ): Promise<{
   headers: string[];
+  headerIndexMap: Map<number, ReturnType<typeof columnsForTarget>[0]>;
   rowCount: number;
   rowsSkipped: number;
 }> {
@@ -69,12 +71,17 @@ async function importSingleSheet(
     if (sheet.sheetIndex === 1) {
       throw new Error(`Sheet ${sheet.sheetIndex} not found in workbook.`);
     }
-    return { headers: referenceHeaders ?? [], rowCount: 0, rowsSkipped: 0 };
+    return {
+      headers: referenceHeaders ?? [],
+      headerIndexMap: referenceHeaderIndexMap ?? new Map(),
+      rowCount: 0,
+      rowsSkipped: 0,
+    };
   }
 
   const batchSize = options.batchSize ?? 500;
   const columns = columnsForTarget(target);
-  let headers: string[] | null = referenceHeaders;
+  let headers: string[] | null = null;
   let headerIndexMap: Map<number, (typeof columns)[0]> | null = null;
   let rowCount = 0;
   let rowsSkipped = 0;
@@ -102,7 +109,22 @@ async function importSingleSheet(
         .filter((v): v is string => v != null && v !== "")
         .map((v) => normalizeHeader(v));
       const match = headersMatch(expectedExcelHeaders(target), foundHeaders);
-      if (!match.ok) {
+      if (match.ok) {
+        headers = foundHeaders;
+        headerIndexMap = buildHeaderIndexMapFromRow(values, columns);
+        prov1Idx = findColumnIndex(headerIndexMap, "PROV1");
+        prov2Idx = findColumnIndex(headerIndexMap, "PROV2");
+        continue;
+      }
+
+      // If Sheet 2+ has no header row (starts directly with data), reuse Sheet 1's header map
+      if (sheet.sheetIndex > 1 && referenceHeaders && referenceHeaderIndexMap) {
+        headers = referenceHeaders;
+        headerIndexMap = referenceHeaderIndexMap;
+        prov1Idx = findColumnIndex(headerIndexMap, "PROV1");
+        prov2Idx = findColumnIndex(headerIndexMap, "PROV2");
+        // Fall through so this first row is processed as a data row
+      } else {
         const details = [
           match.missing.length ? `missing: ${match.missing.join(", ")}` : null,
           match.extra.length ? `extra: ${match.extra.join(", ")}` : null,
@@ -113,11 +135,6 @@ async function importSingleSheet(
           `Sheet ${sheet.sheetIndex} headers do not match SQL schema (${details}).`,
         );
       }
-      headers = foundHeaders;
-      headerIndexMap = buildHeaderIndexMapFromRow(values, columns);
-      prov1Idx = findColumnIndex(headerIndexMap, "PROV1");
-      prov2Idx = findColumnIndex(headerIndexMap, "PROV2");
-      continue;
     }
 
     if (!headerIndexMap) {
@@ -156,11 +173,19 @@ async function importSingleSheet(
 
   await flushBatch();
 
-  if (!headers) {
+  if (!headers || !headerIndexMap) {
+    if (sheet.sheetIndex > 1 && referenceHeaders && referenceHeaderIndexMap) {
+      return {
+        headers: referenceHeaders,
+        headerIndexMap: referenceHeaderIndexMap,
+        rowCount: 0,
+        rowsSkipped: 0,
+      };
+    }
     throw new Error(`Sheet ${sheet.sheetIndex} has no header row.`);
   }
 
-  return { headers, rowCount, rowsSkipped };
+  return { headers, headerIndexMap, rowCount, rowsSkipped };
 }
 
 export async function streamImportXlsx(
@@ -178,6 +203,10 @@ export async function streamImportXlsx(
   const rowsPerSheet: Record<string, number> = {};
   let headers: string[] = [];
   let referenceHeaders: string[] | null = null;
+  let referenceHeaderIndexMap: Map<
+    number,
+    ReturnType<typeof columnsForTarget>[0]
+  > | null = null;
 
   try {
     for (const sheet of sheets) {
@@ -188,11 +217,13 @@ export async function streamImportXlsx(
         sharedStrings,
         options,
         referenceHeaders,
+        referenceHeaderIndexMap,
       );
 
       if (sheet.sheetIndex === 1) {
         headers = result.headers;
         referenceHeaders = result.headers;
+        referenceHeaderIndexMap = result.headerIndexMap;
       } else if (referenceHeaders) {
         const match = headersMatch(referenceHeaders, result.headers);
         if (!match.ok) {

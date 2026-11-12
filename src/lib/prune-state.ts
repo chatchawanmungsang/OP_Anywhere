@@ -121,7 +121,14 @@ export function listPruneCandidates(
     .filter((entry) => entry.isFile())
     .map((entry) => entry.name)
     .filter(isPruneCandidateFileName)
-    .sort((a, b) => a.localeCompare(b));
+    .sort((a, b) => {
+      const targetA = detectTargetFromFileName(a);
+      const targetB = detectTargetFromFileName(b);
+      if (targetA !== targetB) {
+        return targetA === "SUMMARY" ? -1 : 1;
+      }
+      return a.localeCompare(b);
+    });
 
   return files.flatMap((fileName) => {
     const target = detectTargetFromFileName(fileName);

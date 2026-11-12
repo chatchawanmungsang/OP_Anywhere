@@ -30,6 +30,7 @@ export type FilterSheetProgress = {
   prov2Col?: string;
   subFundCol?: string;
   sumsCostCol?: string;
+  tranIdCol?: string;
   skippingRows?: boolean;
   lastRowNum?: number;
   sourceOffset?: number;
@@ -44,6 +45,7 @@ export type FilterSheetResume = {
   prov2Col?: string;
   subFundCol?: string;
   sumsCostCol?: string;
+  tranIdCol?: string;
   /** @deprecated Legacy — ignored when lastRowNum is set. */
   rowsScanned?: number;
   lastRowNum?: number;
@@ -55,9 +57,10 @@ export type StreamFilterSheetOptions = {
   filterProv2: string;
   filterSubFundContains: string;
   filterSumsCostEquals: number;
+  allowedTranIds?: ReadonlySet<string>;
   sharedStrings: string[];
   resume?: FilterSheetResume;
-  /** Reuse PROV columns from an earlier sheet (DETAIL sheet 2). */
+  /** Reuse PROV/TRAN_ID columns from an earlier sheet (DETAIL sheet 2). */
   fallbackProvFilter?: ProvColumnFilter;
   /** Header row XML copied from sheet 1 when sheet 2 has no header row. */
   fallbackHeaderRowXml?: string;
@@ -74,8 +77,9 @@ export type StreamFilterSheetResult = {
   estimatedMaxRow: number | null;
   prov1Col: string;
   prov2Col: string;
-  subFundCol: string;
-  sumsCostCol: string;
+  subFundCol?: string;
+  sumsCostCol?: string;
+  tranIdCol?: string;
   paused: boolean;
   lastRowNum: number;
   sourceOffset: number;
@@ -208,6 +212,7 @@ export async function streamFilterSheetFromFile(
   const resume = options.resume;
   const resuming = resume != null && resume.appendPartial && existsSync(destPath);
   const sharedStrings = options.sharedStrings;
+  const filterMode = options.allowedTranIds ? "DETAIL_TRAN_ID" : "SUMMARY";
 
   const { prefix, bodyStart } = readSheetPrefixFromFile(sourcePath);
   const estimatedMaxRow = parseDimensionMaxRow(prefix);
@@ -227,7 +232,23 @@ export async function streamFilterSheetFromFile(
   let provFilter: ProvColumnFilter | null = null;
 
   if (resuming) {
-    if (
+    if (filterMode === "DETAIL_TRAN_ID" && resume?.tranIdCol) {
+      provFilter = provFilterFromColumns(
+        resume.prov1Col ?? "",
+        resume.prov2Col ?? "",
+        resume.subFundCol,
+        resume.sumsCostCol,
+        options.filterProv1,
+        options.filterProv2,
+        options.filterSubFundContains,
+        options.filterSumsCostEquals,
+        {
+          tranIdCol: resume.tranIdCol,
+          allowedTranIds: options.allowedTranIds,
+        },
+      );
+    } else if (
+      filterMode === "SUMMARY" &&
       resume?.prov1Col &&
       resume?.prov2Col &&
       resume?.subFundCol &&
@@ -257,6 +278,10 @@ export async function streamFilterSheetFromFile(
         options.filterProv2,
         options.filterSubFundContains,
         options.filterSumsCostEquals,
+        {
+          mode: filterMode,
+          allowedTranIds: options.allowedTranIds,
+        },
       );
     }
   }
@@ -286,7 +311,7 @@ export async function streamFilterSheetFromFile(
     }
   }
 
-  // DETAIL sheet 2+: reuse sheet-1 PROV columns; all source rows are data.
+  // DETAIL sheet 2+: reuse sheet-1 PROV/TRAN_ID columns; all source rows are data.
   if (!resuming && options.fallbackProvFilter) {
     writeFallbackHeader();
   }
@@ -314,6 +339,7 @@ export async function streamFilterSheetFromFile(
       prov2Col: provFilter?.prov2Col,
       subFundCol: provFilter?.subFundCol,
       sumsCostCol: provFilter?.sumsCostCol,
+      tranIdCol: provFilter?.tranIdCol,
       skippingRows,
       lastRowNum,
       sourceOffset: lastEndOffset,
@@ -349,6 +375,7 @@ export async function streamFilterSheetFromFile(
       prov2Col: provFilter.prov2Col,
       subFundCol: provFilter.subFundCol,
       sumsCostCol: provFilter.sumsCostCol,
+      tranIdCol: provFilter.tranIdCol,
       paused: false,
       lastRowNum,
       sourceOffset: readStart,
@@ -378,6 +405,10 @@ export async function streamFilterSheetFromFile(
         options.filterProv2,
         options.filterSubFundContains,
         options.filterSumsCostEquals,
+        {
+          mode: filterMode,
+          allowedTranIds: options.allowedTranIds,
+        },
       );
 
       if (headerFilter) {
@@ -402,7 +433,9 @@ export async function streamFilterSheetFromFile(
       throw new Error(
         sharedStrings.length === 0
           ? "Could not load sharedStrings — ลบโฟลเดอร์ .prune-tmp แล้วรันใหม่"
-          : "Sheet is missing PROV1, PROV2, SUB_FUND, or SUMS_COST column.",
+          : filterMode === "DETAIL_TRAN_ID"
+            ? "DETAIL sheet is missing TRAN_ID column."
+            : "Sheet is missing PROV1, PROV2, SUB_FUND, or SUMS_COST column.",
       );
     }
 
@@ -479,6 +512,7 @@ export async function streamFilterSheetFromFile(
       prov2Col: provFilter.prov2Col,
       subFundCol: provFilter.subFundCol,
       sumsCostCol: provFilter.sumsCostCol,
+      tranIdCol: provFilter.tranIdCol,
       paused: true,
       lastRowNum,
       sourceOffset: lastEndOffset,
@@ -499,6 +533,7 @@ export async function streamFilterSheetFromFile(
     prov2Col: provFilter.prov2Col,
     subFundCol: provFilter.subFundCol,
     sumsCostCol: provFilter.sumsCostCol,
+    tranIdCol: provFilter.tranIdCol,
     paused: false,
     lastRowNum,
     sourceOffset: lastEndOffset,

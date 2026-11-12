@@ -1,6 +1,13 @@
-import { existsSync, mkdirSync, rmSync, statSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from "fs";
 import path from "path";
 import type { UploadTargetType } from "./eclaim-schema";
+import { parsePeriodFromFileName } from "./import-metadata";
 import {
   clearCheckpoint,
   clearJobWorkDir,
@@ -16,15 +23,30 @@ import {
   formatEnospcHint,
   isEnospcError,
   isRowBoundaryOffset,
+  iterateSheetRowsFromReadable,
   loadSharedStringsCached,
+  loadSharedStringsFromXlsx,
+  openTrackedSheetStream,
   preparePruneJob,
   rebuildXlsxFromWorkDir,
   sourceSheetPath,
   trimWorkbookToSheets,
   type SheetEntry,
 } from "./xlsx-stream-core";
-import { streamFilterSheetFromFile, readFirstOutputRowFromSheet } from "./xlsx-stream-write";
-import { provFilterFromColumns } from "./xlsx-prov-filter";
+import { openXlsxEntryStream } from "./xlsx-zip-stream";
+import {
+  streamFilterSheetFromFile,
+  readFirstOutputRowFromSheet,
+} from "./xlsx-stream-write";
+import {
+  extractCellByColumn,
+  findHeaderColumnLetter,
+  headerRowHasData,
+  normalizeTranId,
+  provFilterFromColumns,
+  rowMatchesProvFast,
+  tryBuildProvColumnFilter,
+} from "./xlsx-prov-filter";
 
 export type PruneResult = {
   outputPath: string;
@@ -57,6 +79,7 @@ export type PruneOptions = {
 };
 
 const DEFAULT_MAX_RUNTIME_MS = 60 * 60 * 1000;
+const HEADER_SCAN_MAX_ROWS = 100;
 
 function pruneOutputFileName(sourceFileName: string): string {
   const ext = path.extname(sourceFileName);
@@ -146,6 +169,166 @@ function buildCheckpoint(
   };
 }
 
+/**
+ * Find the matching SUM file for a DETAIL file in the same month and period.
+ * Prefers the already-pruned SUM file in `outputDir` (`*SUM*Prune.xlsx`),
+ * and falls back to the raw SUM file in the source directory.
+ */
+export function resolveMatchingSumFileForDetail(
+  detailXlsxPath: string,
+  outputDir: string,
+): { sumFilePath: string; isPruned: boolean } {
+  const detailFileName = path.basename(detailXlsxPath);
+  const sourceDir = path.dirname(detailXlsxPath);
+  const exactSumName = detailFileName.replace(/DETAIL/i, "SUM");
+
+  if (exactSumName !== detailFileName) {
+    const exactPruned = path.join(
+      outputDir,
+      pruneOutputFileName(exactSumName),
+    );
+    if (existsSync(exactPruned)) {
+      return { sumFilePath: exactPruned, isPruned: true };
+    }
+  }
+
+  const period = parsePeriodFromFileName(detailFileName);
+  if (period && existsSync(outputDir)) {
+    const yy = String(period.dataYearThai - 2500).padStart(2, "0");
+    const mm = String(period.dataMonthThai).padStart(2, "0");
+    const pp = String(period.dataPeriod).padStart(2, "0");
+    const suffixRe = new RegExp(`_${yy}${mm}_${pp}Prune\\.xlsx$`, "i");
+
+    const prunedMatch = readdirSync(outputDir).find(
+      (f) => f.toUpperCase().includes("SUM") && suffixRe.test(f),
+    );
+    if (prunedMatch) {
+      return {
+        sumFilePath: path.join(outputDir, prunedMatch),
+        isPruned: true,
+      };
+    }
+  }
+
+  if (exactSumName !== detailFileName) {
+    const exactRaw = path.join(sourceDir, exactSumName);
+    if (existsSync(exactRaw)) {
+      return { sumFilePath: exactRaw, isPruned: false };
+    }
+  }
+
+  if (period && existsSync(sourceDir)) {
+    const yy = String(period.dataYearThai - 2500).padStart(2, "0");
+    const mm = String(period.dataMonthThai).padStart(2, "0");
+    const pp = String(period.dataPeriod).padStart(2, "0");
+    const rawSuffixRe = new RegExp(`_${yy}${mm}_${pp}\\.xlsx$`, "i");
+
+    const rawMatch = readdirSync(sourceDir).find(
+      (f) =>
+        f.toUpperCase().includes("SUM") &&
+        !f.toUpperCase().includes("PRUNE") &&
+        rawSuffixRe.test(f),
+    );
+    if (rawMatch) {
+      return {
+        sumFilePath: path.join(sourceDir, rawMatch),
+        isPruned: false,
+      };
+    }
+  }
+
+  throw new Error(
+    `ไม่พบไฟล์ SUM ของเดือนและงวดเดียวกับ ${detailFileName} (กรุณาวางไฟล์ SUM หรือรัน Prune ไฟล์ SUM ของงวดนี้ก่อน)`,
+  );
+}
+
+/**
+ * Load allowed TRAN_ID values from the matching SUM file.
+ * - If reading from a pruned SUM file (`*Prune.xlsx`), collects all TRAN_ID values.
+ * - If reading from a raw SUM file, applies the SUM filter (PROV1/PROV2/SUB_FUND/SUMS_COST) first.
+ */
+export async function loadMatchingSumTranIdsForDetail(
+  detailXlsxPath: string,
+  options: PruneOptions,
+): Promise<{
+  tranIds: Set<string>;
+  sumFilePath: string;
+  isPruned: boolean;
+  summaryMatchKey: string;
+}> {
+  const { sumFilePath, isPruned } = resolveMatchingSumFileForDetail(
+    detailXlsxPath,
+    options.outputDir,
+  );
+  const sumStat = statSync(sumFilePath);
+  const summaryMatchKey = `${path.basename(sumFilePath)}:${sumStat.size}:${sumStat.mtimeMs}:${isPruned ? "pruned" : `${options.filterProv1}|${options.filterProv2}|${options.filterSubFundContains}|${options.filterSumsCostEquals}`}`;
+
+  const sharedStrings = await loadSharedStringsFromXlsx(sumFilePath);
+  const sheetStream = openXlsxEntryStream(
+    sumFilePath,
+    "xl/worksheets/sheet1.xml",
+  );
+
+  const tranIds = new Set<string>();
+  let tranIdCol: string | null = null;
+  let sumFilter: ReturnType<typeof tryBuildProvColumnFilter> = null;
+  let headerScanRows = 0;
+
+  try {
+    for await (const rowXml of iterateSheetRowsFromReadable(sheetStream)) {
+      if (!tranIdCol) {
+        if (!headerRowHasData(rowXml)) continue;
+        const foundTranCol = findHeaderColumnLetter(
+          rowXml,
+          sharedStrings,
+          "TRAN_ID",
+        );
+        if (foundTranCol) {
+          tranIdCol = foundTranCol;
+          if (!isPruned) {
+            sumFilter = tryBuildProvColumnFilter(
+              rowXml,
+              sharedStrings,
+              options.filterProv1,
+              options.filterProv2,
+              options.filterSubFundContains,
+              options.filterSumsCostEquals,
+              { mode: "SUMMARY" },
+            );
+            if (!sumFilter) {
+              throw new Error(
+                `ไฟล์ SUM (${path.basename(sumFilePath)}) ไม่มีคอลัมน์ PROV1, PROV2, SUB_FUND หรือ SUMS_COST`,
+              );
+            }
+          }
+          continue;
+        }
+        headerScanRows++;
+        if (headerScanRows < HEADER_SCAN_MAX_ROWS) continue;
+        throw new Error(
+          `ไม่พบคอลัมน์ TRAN_ID ในไฟล์ SUM (${path.basename(sumFilePath)})`,
+        );
+      }
+
+      if (!isPruned && sumFilter) {
+        if (!rowMatchesProvFast(rowXml, sumFilter, sharedStrings)) {
+          continue;
+        }
+      }
+
+      const rawVal = extractCellByColumn(rowXml, tranIdCol, sharedStrings);
+      const norm = normalizeTranId(rawVal);
+      if (norm !== "") {
+        tranIds.add(norm);
+      }
+    }
+  } finally {
+    sheetStream.kill();
+  }
+
+  return { tranIds, sumFilePath, isPruned, summaryMatchKey };
+}
+
 async function resolveSheet1Fallback(
   workDir: string,
   sheets: SheetEntry[],
@@ -154,13 +337,18 @@ async function resolveSheet1Fallback(
   filterProv2: string,
   filterSubFundContains: string,
   filterSumsCostEquals: number,
+  allowedTranIds?: ReadonlySet<string>,
 ): Promise<{
   provFilter: ReturnType<typeof provFilterFromColumns>;
   headerRowXml: string | null;
 } | null> {
   const sheet1Done = completedSheets.find((s) => s.sheetIndex === 1);
-  if (
-    !sheet1Done?.prov1Col ||
+  if (!sheet1Done) return null;
+
+  if (allowedTranIds) {
+    if (!sheet1Done.tranIdCol) return null;
+  } else if (
+    !sheet1Done.prov1Col ||
     !sheet1Done.prov2Col ||
     !sheet1Done.subFundCol ||
     !sheet1Done.sumsCostCol
@@ -184,14 +372,18 @@ async function resolveSheet1Fallback(
 
   return {
     provFilter: provFilterFromColumns(
-      sheet1Done.prov1Col,
-      sheet1Done.prov2Col,
+      sheet1Done.prov1Col ?? "",
+      sheet1Done.prov2Col ?? "",
       sheet1Done.subFundCol,
       sheet1Done.sumsCostCol,
       filterProv1,
       filterProv2,
       filterSubFundContains,
       filterSumsCostEquals,
+      {
+        tranIdCol: sheet1Done.tranIdCol,
+        allowedTranIds,
+      },
     ),
     headerRowXml,
   };
@@ -210,6 +402,24 @@ export async function pruneXlsxFile(
   const maxRuntimeMs = options.maxRuntimeMs ?? DEFAULT_MAX_RUNTIME_MS;
   const startedAt = Date.now();
 
+  let allowedTranIds: ReadonlySet<string> | undefined;
+  let summaryMatchKey: string | undefined;
+
+  if (target === "DETAIL") {
+    options.onProgress?.({
+      phase: "อ่าน TRAN_ID จากไฟล์ SUM",
+      sheetIndex: 1,
+      sheetCount: 2,
+      rowsKept: 0,
+      rowsSkipped: 0,
+      rowsScanned: 0,
+      sheetEstimatedMaxRow: null,
+    });
+    const sumMatch = await loadMatchingSumTranIdsForDetail(xlsxPath, options);
+    allowedTranIds = sumMatch.tranIds;
+    summaryMatchKey = sumMatch.summaryMatchKey;
+  }
+
   let existingCheckpoint =
     options.resume !== false ? loadCheckpoint(persistentWorkDir) : null;
 
@@ -221,7 +431,9 @@ export async function pruneXlsxFile(
       existingCheckpoint.filterProv1 !== options.filterProv1 ||
       existingCheckpoint.filterProv2 !== options.filterProv2 ||
       existingCheckpoint.filterSubFundContains !== options.filterSubFundContains ||
-      existingCheckpoint.filterSumsCostEquals !== options.filterSumsCostEquals)
+      existingCheckpoint.filterSumsCostEquals !== options.filterSumsCostEquals ||
+      (target === "DETAIL" &&
+        existingCheckpoint.summaryMatchKey !== summaryMatchKey))
   ) {
     clearJobWorkDir(persistentWorkDir);
     existingCheckpoint = null;
@@ -244,6 +456,7 @@ export async function pruneXlsxFile(
     filterProv2: options.filterProv2,
     filterSubFundContains: options.filterSubFundContains,
     filterSumsCostEquals: options.filterSumsCostEquals,
+    summaryMatchKey,
     target,
     workDir: persistentWorkDir,
   };
@@ -315,6 +528,7 @@ export async function pruneXlsxFile(
               options.filterProv2,
               options.filterSubFundContains,
               options.filterSumsCostEquals,
+              allowedTranIds,
             )
           : null;
 
@@ -356,6 +570,7 @@ export async function pruneXlsxFile(
         prov2Col: resumeSheet?.prov2Col,
         subFundCol: resumeSheet?.subFundCol,
         sumsCostCol: resumeSheet?.sumsCostCol,
+        tranIdCol: resumeSheet?.tranIdCol,
         lastRowNum: resumeSheet?.lastRowNum,
         sourceOffset: resumeSheet?.sourceOffset,
         complete: false,
@@ -381,6 +596,7 @@ export async function pruneXlsxFile(
           filterProv2: options.filterProv2,
           filterSubFundContains: options.filterSubFundContains,
           filterSumsCostEquals: options.filterSumsCostEquals,
+          allowedTranIds,
           sharedStrings,
           fallbackProvFilter:
             sheet.sheetIndex > 1 ? sheet1Fallback?.provFilter : undefined,
@@ -397,6 +613,7 @@ export async function pruneXlsxFile(
                 prov2Col: resumeSheet.prov2Col,
                 subFundCol: resumeSheet.subFundCol,
                 sumsCostCol: resumeSheet.sumsCostCol,
+                tranIdCol: resumeSheet.tranIdCol,
                 lastRowNum: resumeSheet.lastRowNum,
                 sourceOffset: resumeSheet.sourceOffset,
               }
@@ -412,6 +629,7 @@ export async function pruneXlsxFile(
             runningSheet.prov2Col = p.prov2Col;
             runningSheet.subFundCol = p.subFundCol;
             runningSheet.sumsCostCol = p.sumsCostCol;
+            runningSheet.tranIdCol = p.tranIdCol;
             runningSheet.lastRowNum = p.lastRowNum;
             runningSheet.sourceOffset = p.sourceOffset;
 
@@ -442,6 +660,7 @@ export async function pruneXlsxFile(
             runningSheet.prov2Col = p.prov2Col;
             runningSheet.subFundCol = p.subFundCol;
             runningSheet.sumsCostCol = p.sumsCostCol;
+            runningSheet.tranIdCol = p.tranIdCol;
             runningSheet.lastRowNum = p.lastRowNum;
             runningSheet.sourceOffset = p.sourceOffset;
             saveCheckpoint(
@@ -489,6 +708,7 @@ export async function pruneXlsxFile(
         prov2Col: result.prov2Col,
         subFundCol: result.subFundCol,
         sumsCostCol: result.sumsCostCol,
+        tranIdCol: result.tranIdCol,
         lastRowNum: result.lastRowNum,
         sourceOffset: result.sourceOffset,
         complete: true,

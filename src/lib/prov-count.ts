@@ -55,7 +55,9 @@ async function resolveProv1Column(
   let scanned = 0;
   for await (const rowXml of iterateSheetRows(sheetPath)) {
     if (!headerRowHasData(rowXml)) continue;
-    const filter = tryBuildProvColumnFilter(rowXml, sharedStrings, "", "");
+    const filter = tryBuildProvColumnFilter(rowXml, sharedStrings, "", "", "", 0, {
+      mode: "PROV_ONLY",
+    });
     if (filter) return filter.prov1Col;
     scanned++;
     if (scanned >= HEADER_SCAN_MAX_ROWS) break;
@@ -82,6 +84,9 @@ async function scanSheetProv1Counts(
         sharedStrings,
         "",
         "",
+        "",
+        0,
+        { mode: "PROV_ONLY" },
       );
       if (headerFilter) {
         headerDone = true;

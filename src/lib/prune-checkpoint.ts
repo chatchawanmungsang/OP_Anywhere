@@ -22,6 +22,7 @@ export type SheetCheckpoint = {
   prov2Col?: string;
   subFundCol?: string;
   sumsCostCol?: string;
+  tranIdCol?: string;
   /** Last Excel row number (r="N") fully processed — reliable resume marker. */
   lastRowNum?: number;
   /** @deprecated Byte offset — only used when aligned to a row boundary. */
@@ -38,6 +39,7 @@ export type PruneCheckpoint = {
   filterProv2: string;
   filterSubFundContains: string;
   filterSumsCostEquals: number;
+  summaryMatchKey?: string;
   target: UploadTargetType;
   workDir: string;
   completedSheets: SheetCheckpoint[];
