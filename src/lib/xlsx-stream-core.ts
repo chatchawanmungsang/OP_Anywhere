@@ -170,7 +170,7 @@ export function parseRowCells(
   rowXml: string,
   sharedStrings: string[],
 ): (string | null)[] {
-  const cells = [...rowXml.matchAll(/<c([^>]*)>([\s\S]*?)<\/c>/g)];
+  const cells = [...rowXml.matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)];
   let maxIndex = -1;
   const sparse = new Map<number, string | null>();
 
@@ -179,13 +179,15 @@ export function parseRowCells(
     const inner = cell[2];
     const refMatch = attrs.match(/\br="([A-Z]+[0-9]+)"/i);
     const index = refMatch ? colRefToIndex(refMatch[1]) : sparse.size;
-    const vMatch = inner.match(/<v>([^<]*)<\/v>/);
-    const tMatch = inner.match(/<t[^>]*>([^<]*)<\/t>/);
     let value: string | null = null;
-    if (vMatch) {
-      value = parseCellValue(attrs, vMatch[1], sharedStrings);
-    } else if (tMatch) {
-      value = tMatch[1];
+    if (inner != null) {
+      const vMatch = inner.match(/<v>([^<]*)<\/v>/);
+      const tMatch = inner.match(/<t[^>]*>([^<]*)<\/t>/);
+      if (vMatch) {
+        value = parseCellValue(attrs, vMatch[1], sharedStrings);
+      } else if (tMatch) {
+        value = tMatch[1];
+      }
     }
     sparse.set(index, value);
     maxIndex = Math.max(maxIndex, index);

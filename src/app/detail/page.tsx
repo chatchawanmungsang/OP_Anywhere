@@ -4,7 +4,7 @@ import { EclaimPage } from "@/components/eclaim-page";
 export default function DetailPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; page?: string }>;
+  searchParams: Promise<{ q?: string; page?: string; tranId?: string }>;
 }) {
   return (
     <EclaimPage

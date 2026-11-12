@@ -23,7 +23,7 @@ export const THAI_MONTHS = [
 export function parsePeriodFromFileName(
   fileName: string,
 ): ParsedFilePeriod | null {
-  const match = fileName.match(/_(\d{2})(\d{2})_(\d{2})\.xlsx$/i);
+  const match = fileName.match(/_(\d{2})(\d{2})_(\d{2})(?:[_-]?prune)?\.xlsx$/i);
   if (!match) return null;
   const yearSuffix = Number(match[1]);
   const month = Number(match[2]);

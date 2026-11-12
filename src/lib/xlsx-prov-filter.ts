@@ -13,7 +13,7 @@ export type ProvColumnFilter = {
   allowedTranIds?: ReadonlySet<string>;
 };
 
-const CELL_RE = /<c([^>]*)>([\s\S]*?)<\/c>/g;
+const CELL_RE = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g;
 
 function cellRefColumn(attrs: string): string | null {
   const m = attrs.match(/\br="([A-Z]+)\d+"/i);
@@ -22,9 +22,10 @@ function cellRefColumn(attrs: string): string | null {
 
 function cellValueFromParts(
   attrs: string,
-  inner: string,
+  inner: string | undefined,
   sharedStrings: string[],
 ): string | null {
+  if (!inner) return null;
   const vMatch = inner.match(/<v>([^<]*)<\/v>/);
   const tMatch = inner.match(/<t[^>]*>([^<]*)<\/t>/);
   if (vMatch) {
