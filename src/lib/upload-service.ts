@@ -45,6 +45,51 @@ export function getArchiveRoot(): string {
   return path.join(process.cwd(), "data", "archive");
 }
 
+/** Check against previously successful imports before staging a new upload. */
+export async function findSuccessfulImportConflict(input: {
+  fileName: string;
+  target: UploadTarget;
+  dataYearThai: number;
+  dataMonthThai: number;
+  dataPeriod: number;
+  filterProv1: string;
+  filterProv2: string;
+}): Promise<string | null> {
+  const sameFile = await prisma.uploadBatch.findFirst({
+    where: {
+      status: UploadStatus.SUCCESS,
+      fileName: { equals: input.fileName, mode: "insensitive" },
+    },
+    orderBy: { completedAt: "desc" },
+  });
+  if (sameFile) {
+    const when = sameFile.completedAt
+      ? sameFile.completedAt.toLocaleString("th-TH", {
+          timeZone: "Asia/Bangkok",
+        })
+      : "-";
+    return `ไฟล์นี้เคยนำเข้าสำเร็จแล้ว: "${sameFile.fileName}" (${formatThaiPeriod(sameFile.dataYearThai, sameFile.dataMonthThai, sameFile.dataPeriod)}) เมื่อ ${when} — กรุณาลบข้อมูลงวดนั้นก่อนนำเข้าซ้ำ`;
+  }
+
+  const samePeriod = await prisma.uploadBatch.findFirst({
+    where: {
+      status: UploadStatus.SUCCESS,
+      target: input.target,
+      dataYearThai: input.dataYearThai,
+      dataMonthThai: input.dataMonthThai,
+      dataPeriod: input.dataPeriod,
+      filterProv1: input.filterProv1,
+      filterProv2: input.filterProv2,
+    },
+    orderBy: { completedAt: "desc" },
+  });
+  if (samePeriod) {
+    return `มีข้อมูล${input.target === UploadTarget.SUMMARY ? " Summary" : " Detail"} ของ ${formatThaiPeriod(input.dataYearThai, input.dataMonthThai, input.dataPeriod)} (PROV1=${input.filterProv1}, PROV2=${input.filterProv2}) นำเข้าสำเร็จจากไฟล์ "${samePeriod.fileName}" อยู่แล้ว — กรุณาลบข้อมูลงวดนั้นก่อนนำเข้าใหม่`;
+  }
+
+  return null;
+}
+
 async function writeUploadToPath(file: File, destPath: string) {
   mkdirSync(path.dirname(destPath), { recursive: true });
   const nodeStream = Readable.fromWeb(
@@ -98,6 +143,19 @@ export async function stageUpload(
     scheduleMode === "IMMEDIATE" ? new Date() : computeNextScheduleAt();
   const filterProv1 = input.filterProv1.trim();
   const filterProv2 = input.filterProv2.trim();
+
+  const duplicateCheck = await findSuccessfulImportConflict({
+    fileName: file.name,
+    target,
+    dataYearThai: input.dataYearThai,
+    dataMonthThai: input.dataMonthThai,
+    dataPeriod: input.dataPeriod,
+    filterProv1,
+    filterProv2,
+  });
+  if (duplicateCheck) {
+    return { ok: false, message: duplicateCheck };
+  }
 
   const batch = await prisma.uploadBatch.create({
     data: {

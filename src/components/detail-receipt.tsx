@@ -1,4 +1,9 @@
 import Link from "next/link";
+import {
+  StickyTableFrame,
+  stickyThClass,
+  stickyTheadClass,
+} from "@/components/sticky-table-frame";
 import { THAI_MONTHS, formatThaiPeriod } from "@/lib/import-metadata";
 
 export type ReceiptItemRow = {
@@ -100,8 +105,8 @@ export function DetailReceipt({ header, items }: Props) {
   ].filter(Boolean) as string[];
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Link
             href="/summary"
@@ -122,9 +127,9 @@ export function DetailReceipt({ header, items }: Props) {
       </div>
 
       {/* Receipt Container */}
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-md">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-md">
         {/* Top Receipt Banner */}
-        <div className="border-b border-dashed border-slate-300 bg-gradient-to-r from-teal-900 via-teal-800 to-emerald-900 px-6 py-5 text-white">
+        <div className="shrink-0 border-b border-dashed border-slate-300 bg-gradient-to-r from-teal-900 via-teal-800 to-emerald-900 px-6 py-5 text-white">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-widest text-teal-200">
@@ -146,7 +151,7 @@ export function DetailReceipt({ header, items }: Props) {
         </div>
 
         {/* Receipt Header Details (ก่อนหัวตาราง) */}
-        <div className="border-b border-dashed border-slate-300 bg-slate-50/70 px-6 py-5">
+        <div className="shrink-0 border-b border-dashed border-slate-300 bg-slate-50/70 px-6 py-5">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div className="rounded-xl border border-slate-200/80 bg-white p-3.5 shadow-2xs">
               <p className="text-xs font-medium text-slate-500">
@@ -226,33 +231,24 @@ export function DetailReceipt({ header, items }: Props) {
           </div>
         </div>
 
-        {/* Receipt Items Table (ตารางรายการรักษาเฉพาะคอลัมน์ที่ไม่ซ้ำกัน) */}
-        <div className="overflow-x-auto px-6 py-5">
-          {items.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center text-slate-500">
-              ไม่พบรายการรักษาในตาราง Detail สำหรับ TRAN_ID {header.tranId}{" "}
-              (อาจยังไม่ได้นำเข้าไฟล์ DETAIL ของงวดนี้)
-            </div>
-          ) : (
+        {/* Receipt Items Table */}
+        <div className="flex min-h-0 flex-1 flex-col px-4 py-3">
+          <StickyTableFrame
+            empty={items.length === 0}
+            emptyMessage={`ไม่พบรายการรักษาในตาราง Detail สำหรับ TRAN_ID ${header.tranId} (อาจยังไม่ได้นำเข้าไฟล์ DETAIL ของงวดนี้)`}
+            className="border-0 shadow-none"
+          >
             <table className="min-w-full border-collapse text-left text-sm">
-              <thead>
-                <tr className="border-b-2 border-slate-300 bg-slate-100/80 text-xs font-semibold uppercase tracking-wider text-slate-600">
-                  <th className="w-12 px-3 py-3 text-center">#</th>
-                  <th className="whitespace-nowrap px-3 py-3">ITEM_CODE</th>
-                  <th className="whitespace-nowrap px-3 py-3">TMT_ID</th>
-                  <th className="px-3 py-3">ITEM_NAME (รายการรักษา)</th>
-                  <th className="whitespace-nowrap px-3 py-3 text-right">
-                    จำนวน
-                  </th>
-                  <th className="whitespace-nowrap px-3 py-3 text-right">
-                    ราคากลาง
-                  </th>
-                  <th className="whitespace-nowrap px-3 py-3 text-right">
-                    ยอดเบิก
-                  </th>
-                  <th className="whitespace-nowrap px-3 py-3 text-right">
-                    ยอดจ่าย
-                  </th>
+              <thead className={stickyTheadClass}>
+                <tr>
+                  <th className={`${stickyThClass} w-12 text-center`}>#</th>
+                  <th className={stickyThClass}>ITEM_CODE</th>
+                  <th className={stickyThClass}>TMT_ID</th>
+                  <th className={stickyThClass}>ITEM_NAME (รายการรักษา)</th>
+                  <th className={`${stickyThClass} text-right`}>จำนวน</th>
+                  <th className={`${stickyThClass} text-right`}>ราคากลาง</th>
+                  <th className={`${stickyThClass} text-right`}>ยอดเบิก</th>
+                  <th className={`${stickyThClass} text-right`}>ยอดจ่าย</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200/70">
@@ -336,11 +332,11 @@ export function DetailReceipt({ header, items }: Props) {
                 </tr>
               </tfoot>
             </table>
-          )}
+          </StickyTableFrame>
         </div>
 
-        {/* Receipt Footer (ด้านท้ายของตาราง: งวดเดือน, ชื่อไฟล์นำเข้า, REP, HN) */}
-        <div className="border-t border-dashed border-slate-300 bg-slate-50 px-6 py-4">
+        {/* Receipt Footer */}
+        <div className="shrink-0 border-t border-dashed border-slate-300 bg-slate-50 px-6 py-4">
           <div className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <p className="text-xs font-medium text-slate-500">งวดเดือน</p>

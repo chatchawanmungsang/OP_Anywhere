@@ -6,6 +6,11 @@ import {
   updateUserAction,
   type ActionResult,
 } from "@/app/actions";
+import {
+  StickyTableFrame,
+  stickyThClass,
+  stickyTheadClass,
+} from "@/components/sticky-table-frame";
 import { Role } from "@prisma/client";
 
 type UserRow = {
@@ -37,7 +42,7 @@ export function UsersManager({ users }: { users: UserRow[] }) {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       {message ? (
         <p
           className={`rounded-md px-3 py-2 text-sm ${
@@ -50,7 +55,7 @@ export function UsersManager({ users }: { users: UserRow[] }) {
         </p>
       ) : null}
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="shrink-0 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="mb-4 text-lg font-semibold text-slate-900">
           {editing ? `Edit ${editing.name}` : "Create user"}
         </h2>
@@ -139,15 +144,15 @@ export function UsersManager({ users }: { users: UserRow[] }) {
         </form>
       </section>
 
-      <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <StickyTableFrame>
         <table className="min-w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+          <thead className={stickyTheadClass}>
             <tr>
-              <th className="px-3 py-3">Name</th>
-              <th className="px-3 py-3">Email</th>
-              <th className="px-3 py-3">Role</th>
-              <th className="px-3 py-3">Status</th>
-              <th className="px-3 py-3">Actions</th>
+              <th className={stickyThClass}>Name</th>
+              <th className={stickyThClass}>Email</th>
+              <th className={stickyThClass}>Role</th>
+              <th className={stickyThClass}>Status</th>
+              <th className={stickyThClass}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -180,7 +185,7 @@ export function UsersManager({ users }: { users: UserRow[] }) {
             ))}
           </tbody>
         </table>
-      </section>
+      </StickyTableFrame>
     </div>
   );
 }

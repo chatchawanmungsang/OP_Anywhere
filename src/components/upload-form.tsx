@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { detectUploadTarget } from "@/lib/eclaim-upload";
 import {
   parsePeriodFromFileName,
@@ -28,6 +28,8 @@ export function UploadForm() {
   const [filterProv1, setFilterProv1] = useState<string>("");
   const [filterProv2, setFilterProv2] = useState<string>("");
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("SCHEDULED");
+  const [dupWarning, setDupWarning] = useState<string | null>(null);
+  const [checkingDup, setCheckingDup] = useState(false);
   const [pending, startTransition] = useTransition();
 
   const detected = fileName ? detectUploadTarget(fileName) : null;
@@ -38,8 +40,60 @@ export function UploadForm() {
         ? "eclaim_transaction_data"
         : null;
 
+  useEffect(() => {
+    if (!fileName || !targetLabel || !filterProv1.trim() || !filterProv2.trim()) {
+      setDupWarning(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setCheckingDup(true);
+      try {
+        const res = await fetch("/api/upload/check-duplicate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileName,
+            dataYearThai: Number(dataYearThai),
+            dataMonthThai: Number(dataMonthThai),
+            dataPeriod: Number(dataPeriod),
+            filterProv1: filterProv1.trim(),
+            filterProv2: filterProv2.trim(),
+          }),
+          signal: controller.signal,
+        });
+        const data = (await res.json()) as {
+          duplicate?: boolean;
+          message?: string | null;
+        };
+        setDupWarning(data.duplicate ? (data.message ?? "พบไฟล์ซ้ำ") : null);
+      } catch (err) {
+        if ((err as Error).name !== "AbortError") {
+          setDupWarning(null);
+        }
+      } finally {
+        setCheckingDup(false);
+      }
+    }, 350);
+
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [
+    fileName,
+    targetLabel,
+    dataYearThai,
+    dataMonthThai,
+    dataPeriod,
+    filterProv1,
+    filterProv2,
+  ]);
+
   function onFileChange(name: string) {
     setFileName(name);
+    setResult(null);
     const parsed = parsePeriodFromFileName(name);
     if (parsed) {
       setDataYearThai(String(parsed.dataYearThai));
@@ -61,6 +115,14 @@ export function UploadForm() {
 
     if (!filterProv1.trim() || !filterProv2.trim()) {
       setResult({ ok: false, message: "PROV1 และ PROV2 จำเป็นต้องระบุ" });
+      return;
+    }
+
+    if (dupWarning) {
+      setResult({
+        ok: false,
+        message: dupWarning,
+      });
       return;
     }
 
@@ -97,7 +159,8 @@ export function UploadForm() {
     fileName !== "" &&
     targetLabel &&
     filterProv1.trim() !== "" &&
-    filterProv2.trim() !== "";
+    filterProv2.trim() !== "" &&
+    !dupWarning;
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
@@ -211,6 +274,17 @@ export function UploadForm() {
         </label>
       </div>
 
+      {checkingDup ? (
+        <p className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
+          กำลังตรวจสอบว่าไฟล์ซ้ำกับที่เคยนำเข้าสำเร็จหรือไม่…
+        </p>
+      ) : null}
+      {dupWarning ? (
+        <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          {dupWarning}
+        </p>
+      ) : null}
+
       <fieldset className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 text-sm">
         <legend className="px-1 font-medium text-slate-800">
           รูปแบบการประมวลผลของ Worker
@@ -274,7 +348,7 @@ export function UploadForm() {
 
       <button
         type="submit"
-        disabled={pending || !canSubmit}
+        disabled={pending || !canSubmit || checkingDup}
         className="rounded-lg bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-60"
       >
         {pending

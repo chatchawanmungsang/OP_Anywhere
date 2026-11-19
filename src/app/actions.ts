@@ -72,6 +72,80 @@ export async function clearEclaimDataAction(
   };
 }
 
+/** ลบข้อมูลที่นำเข้าสำเร็จของ batch (รายงวด) จากเมนูนำเข้า */
+export async function deleteImportBatchDataAction(
+  batchId: string,
+): Promise<ActionResult> {
+  const session = await auth();
+  if (!session?.user || !canUpload(session.user.role)) {
+    return { ok: false, message: "ไม่มีสิทธิ์ลบข้อมูลที่นำเข้า" };
+  }
+
+  const batch = await prisma.uploadBatch.findUnique({ where: { id: batchId } });
+  if (!batch) {
+    return { ok: false, message: "ไม่พบรายการนำเข้านี้" };
+  }
+  if (batch.status !== UploadStatus.SUCCESS) {
+    return {
+      ok: false,
+      message: "ลบได้เฉพาะรายการที่นำเข้าสำเร็จ (SUCCESS) เท่านั้น",
+    };
+  }
+  if (!batch.target) {
+    return { ok: false, message: "ไม่ทราบประเภทข้อมูลของรายการนี้" };
+  }
+
+  const periodWhere = {
+    importYearThai: batch.dataYearThai,
+    importMonthThai: batch.dataMonthThai,
+    importPeriod: batch.dataPeriod,
+  };
+
+  let deleted = 0;
+  if (batch.target === UploadTarget.SUMMARY) {
+    // ลบทั้งงวด Summary ที่ตรงปี/เดือน/งวด (รวมแถวจาก batch อื่นของงวดเดียวกัน)
+    const result = await prisma.eclaimTransactionSummary.deleteMany({
+      where: periodWhere,
+    });
+    deleted = result.count;
+  } else {
+    const result = await prisma.eclaimTransactionData.deleteMany({
+      where: periodWhere,
+    });
+    deleted = result.count;
+  }
+
+  // ทำเครื่องหมาย batch ที่สำเร็จของงวด+target+PROV เดียวกันว่าถูกลบแล้ว
+  await prisma.uploadBatch.updateMany({
+    where: {
+      status: UploadStatus.SUCCESS,
+      target: batch.target,
+      dataYearThai: batch.dataYearThai,
+      dataMonthThai: batch.dataMonthThai,
+      dataPeriod: batch.dataPeriod,
+      filterProv1: batch.filterProv1,
+      filterProv2: batch.filterProv2,
+    },
+    data: {
+      status: UploadStatus.CANCELLED,
+      errorMessage: `ข้อมูลถูกลบโดย ${session.user.email} เมื่อ ${new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })} (ลบ ${deleted.toLocaleString()} แถว)`,
+      warningMessage: null,
+      rowCount: 0,
+    },
+  });
+
+  revalidatePath("/upload");
+  revalidatePath("/summary");
+  revalidatePath("/detail");
+  revalidatePath("/");
+
+  const periodLabel = `${batch.dataMonthThai}/${batch.dataYearThai} งวด ${batch.dataPeriod}`;
+  return {
+    ok: true,
+    message: `ลบข้อมูล ${batch.target} ของ ${periodLabel} แล้ว ${deleted.toLocaleString()} แถว`,
+  };
+}
+
 export async function runUploadBatchNowAction(
   batchId: string,
 ): Promise<ActionResult> {

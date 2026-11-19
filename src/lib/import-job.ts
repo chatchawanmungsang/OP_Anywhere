@@ -48,6 +48,50 @@ export function resolveArchivedFilePath(storedPath: string): string {
     : path.join(process.cwd(), normalized);
 }
 
+/** TRAN_ID ใน Summary ต้องไม่ซ้ำในงวดเดียวกัน */
+export async function detectSummaryDuplicatesForPeriod(input: {
+  importYearThai: number;
+  importMonthThai: number;
+  importPeriod: number;
+}): Promise<string | null> {
+  const dupes = await prisma.$queryRaw<
+    { tran_id: bigint; cnt: bigint }[]
+  >`
+    SELECT tran_id, COUNT(*)::bigint AS cnt
+    FROM eclaim_transaction_summary
+    WHERE import_year_thai = ${input.importYearThai}
+      AND import_month_thai = ${input.importMonthThai}
+      AND import_period = ${input.importPeriod}
+      AND tran_id IS NOT NULL
+    GROUP BY tran_id
+    HAVING COUNT(*) > 1
+    ORDER BY cnt DESC
+    LIMIT 20
+  `;
+
+  if (dupes.length === 0) return null;
+
+  const totalDupGroups = await prisma.$queryRaw<{ n: bigint }[]>`
+    SELECT COUNT(*)::bigint AS n FROM (
+      SELECT tran_id
+      FROM eclaim_transaction_summary
+      WHERE import_year_thai = ${input.importYearThai}
+        AND import_month_thai = ${input.importMonthThai}
+        AND import_period = ${input.importPeriod}
+        AND tran_id IS NOT NULL
+      GROUP BY tran_id
+      HAVING COUNT(*) > 1
+    ) d
+  `;
+  const groupCount = Number(totalDupGroups[0]?.n ?? dupes.length);
+  const samples = dupes
+    .slice(0, 5)
+    .map((d) => `${d.tran_id}×${d.cnt}`)
+    .join(", ");
+
+  return `พบ TRAN_ID ซ้ำใน Summary ${groupCount.toLocaleString()} รหัส (ไม่ควรซ้ำ) เช่น ${samples}`;
+}
+
 export async function claimNextDueJob(): Promise<UploadBatch | null> {
   const maxJobs = Number(process.env.WORKER_MAX_JOBS_PER_RUN ?? "1");
   const due = await prisma.uploadBatch.findMany({
@@ -132,6 +176,15 @@ export async function processUploadJob(batchId: string): Promise<void> {
       },
     });
 
+    let warningMessage: string | null = null;
+    if (batch.target === UploadTarget.SUMMARY) {
+      warningMessage = await detectSummaryDuplicatesForPeriod({
+        importYearThai: batch.dataYearThai,
+        importMonthThai: batch.dataMonthThai,
+        importPeriod: batch.dataPeriod,
+      });
+    }
+
     await prisma.uploadBatch.update({
       where: { id: batch.id },
       data: {
@@ -143,8 +196,13 @@ export async function processUploadJob(batchId: string): Promise<void> {
         progressRows: imported.rowCount,
         completedAt: new Date(),
         errorMessage: null,
+        warningMessage,
       },
     });
+
+    if (warningMessage) {
+      console.warn(`[import-job] ${warningMessage}`);
+    }
 
     console.log(
       `[import-job] Imported ${imported.rowCount} rows (skipped ${imported.rowsSkipped}) for ${batch.fileName}`,

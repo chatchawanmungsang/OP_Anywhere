@@ -1,6 +1,5 @@
 import { Suspense } from "react";
 import { UploadTarget, Prisma } from "@prisma/client";
-import { AppNav } from "@/components/app-nav";
 import { DataTable } from "@/components/data-table";
 import {
   DetailReceipt,
@@ -8,6 +7,7 @@ import {
   type ReceiptItemRow,
 } from "@/components/detail-receipt";
 import { EclaimToolbar } from "@/components/eclaim-toolbar";
+import { PageShell } from "@/components/page-shell";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
 import { canDeleteData } from "@/lib/roles";
@@ -155,12 +155,9 @@ export async function EclaimPage({
     }));
 
     return (
-      <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_#ecfdf5_0%,_#f8fafc_45%,_#e2e8f0_100%)]">
-        <AppNav activePath={path} />
-        <main className="mx-auto max-w-6xl space-y-6 px-4 py-8 sm:px-6">
-          <DetailReceipt header={receiptHeader} items={receiptItems} />
-        </main>
-      </div>
+      <PageShell activePath={path}>
+        <DetailReceipt header={receiptHeader} items={receiptItems} />
+      </PageShell>
     );
   }
 
@@ -258,50 +255,53 @@ export async function EclaimPage({
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_#ecfdf5_0%,_#f8fafc_45%,_#e2e8f0_100%)]">
-      <AppNav activePath={path} />
-      <main className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-            {title}
-          </h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Table: <code className="text-teal-800">{tableLabel}</code> ·{" "}
-            <span className="font-medium text-teal-800">
-              คลิกที่แถวเพื่อเปิดมุมมองใบเสร็จรายการรักษา (Detail) ของ TRAN_ID นั้น
-            </span>
-          </p>
-        </div>
-
-        <Suspense fallback={null}>
-          <EclaimToolbar
-            target={target}
-            canDelete={canDeleteData(session.user.role)}
-            total={total}
-            page={page}
-            pageSize={PAGE_SIZE}
-            search={q}
-            pagePath={path}
-            tableLabel={tableLabel}
-          />
-        </Suspense>
-
-        <DataTable
-          headers={headers}
-          rows={rows.map((r) => ({
-            id: r.id,
-            data: r.record,
-            sourceFileName: r.sourceFileName,
-            uploadedAt: r.uploadedAt.toISOString(),
-            href: r.href,
-          }))}
-          emptyMessage={
-            total === 0
-              ? "No data yet. Upload a SUM or DETAIL Excel file to import."
-              : "No rows match your search."
-          }
-        />
-      </main>
-    </div>
+    <PageShell
+      activePath={path}
+      header={
+        <>
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+              {title}
+            </h1>
+            <p className="mt-1 text-sm text-slate-600">
+              Table: <code className="text-teal-800">{tableLabel}</code> ·{" "}
+              <span className="font-medium text-teal-800">
+                คลิกที่แถวเพื่อเปิดมุมมองใบเสร็จรายการรักษา (Detail) ของ TRAN_ID นั้น
+              </span>
+            </p>
+          </div>
+          <Suspense fallback={null}>
+            <EclaimToolbar
+              target={target}
+              canDelete={canDeleteData(session.user.role)}
+              total={total}
+              page={page}
+              pageSize={PAGE_SIZE}
+              search={q}
+              pagePath={path}
+              tableLabel={tableLabel}
+            />
+          </Suspense>
+        </>
+      }
+    >
+      <DataTable
+        stickyHeader
+        className="min-h-0 flex-1"
+        headers={headers}
+        rows={rows.map((r) => ({
+          id: r.id,
+          data: r.record,
+          sourceFileName: r.sourceFileName,
+          uploadedAt: r.uploadedAt.toISOString(),
+          href: r.href,
+        }))}
+        emptyMessage={
+          total === 0
+            ? "No data yet. Upload a SUM or DETAIL Excel file to import."
+            : "No rows match your search."
+        }
+      />
+    </PageShell>
   );
 }

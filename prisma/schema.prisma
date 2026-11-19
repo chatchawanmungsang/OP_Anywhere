@@ -63,6 +63,7 @@ model UploadBatch {
   progressRows     Int          @default(0)
   sheetsProcessed  Int          @default(0)
   rowsPerSheet     Json?
+  warningMessage   String?      @map("warning_message") @db.Text
 
   createdAt        DateTime     @default(now())
   summaries        EclaimTransactionSummary[]
@@ -164,10 +165,67 @@ model EclaimTransactionSummary {
   importFileName   String   @map("import_file_name")
   importUploadedAt DateTime @map("import_uploaded_at")
 
+  remarkStatus     String?   @map("remark_status") @db.VarChar(20)
+  remarkRuleCode   String?   @map("remark_rule_code") @db.VarChar(64)
+  remarkNote       String?   @map("remark_note") @db.Text
+  remarkedAt       DateTime? @map("remarked_at")
+
   @@index([tranId])
   @@index([uploadedAt])
   @@index([importYearThai, importMonthThai, importPeriod])
+  @@index([importYearThai, importMonthThai, importPeriod, remarkStatus], map: "eclaim_summary_period_remark_status_idx")
   @@map("eclaim_transaction_summary")
+}
+
+model RemarkRule {
+  id             String   @id @default(cuid())
+  code           String   @unique @db.VarChar(64)
+  name           String   @db.VarChar(255)
+  description    String?  @db.Text
+  remarkText     String   @map("remark_text") @db.Text
+  outcome        String   @default("PRUNED_OUT") @db.VarChar(20)
+  priority       Int      @default(100)
+  active         Boolean  @default(true)
+  conditionMode  String   @default("BUILDER") @map("condition_mode") @db.VarChar(20)
+  conditionsJson Json?    @map("conditions_json")
+  sqlWhere       String   @map("sql_where") @db.Text
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([active, priority])
+  @@map("remark_rules")
+}
+
+model RefCupNetwork {
+  id           String  @id @default(cuid())
+  hmainCup     String  @map("hmain_cup") @db.VarChar(10)
+  hmainCupName String? @map("hmain_cup_name") @db.VarChar(255)
+  pcuHcode     String  @map("pcu_hcode") @db.VarChar(10)
+  pcuName      String? @map("pcu_name") @db.VarChar(255)
+  province     String? @db.VarChar(100)
+  region       String? @db.VarChar(100)
+
+  @@unique([hmainCup, pcuHcode])
+  @@index([hmainCup])
+  @@index([pcuHcode])
+  @@map("ref_cup_network")
+}
+
+model RefHealthOffice {
+  hcode        String  @id @db.VarChar(10)
+  name         String? @db.VarChar(255)
+  orgType      String? @map("org_type") @db.VarChar(100)
+  unitType     String? @map("unit_type") @db.VarChar(150)
+  affiliation  String? @db.VarChar(150)
+  hospLevel    String? @map("hosp_level") @db.VarChar(100)
+  activeStatus String? @map("active_status") @db.VarChar(100)
+  provinceCode String? @map("province_code") @db.VarChar(10)
+  provinceName String? @map("province_name") @db.VarChar(100)
+  amphurCode   String? @map("amphur_code") @db.VarChar(10)
+
+  @@index([hospLevel])
+  @@index([affiliation])
+  @@map("ref_health_office")
 }
 
 model EclaimTransactionData {

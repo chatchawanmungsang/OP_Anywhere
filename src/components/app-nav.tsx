@@ -4,8 +4,10 @@ import { logoutAction } from "@/app/actions";
 import { canManageUsers, canUpload, roleLabel } from "@/lib/roles";
 
 const links = [
+  { href: "/", label: "หน้าแรก" },
   { href: "/summary", label: "Summary" },
   { href: "/detail", label: "Detail" },
+  { href: "/remark", label: "Remark" },
   { href: "/upload", label: "Upload", needsUpload: true },
   { href: "/users", label: "Users", needsAdmin: true },
 ] as const;
@@ -20,10 +22,10 @@ export async function AppNav({ activePath }: { activePath: string }) {
 
   return (
     <header className="border-b border-slate-200 bg-white/90 backdrop-blur">
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-3 sm:px-6">
+      <div className="flex w-full flex-wrap items-center justify-between gap-4 px-3 py-3 sm:px-4">
         <div className="flex items-center gap-6">
           <Link
-            href="/summary"
+            href="/"
             className="text-lg font-semibold tracking-tight text-slate-900"
           >
             OP Anywhere

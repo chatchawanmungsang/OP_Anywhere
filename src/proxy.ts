@@ -9,6 +9,11 @@ export default auth((req) => {
     return NextResponse.next();
   }
 
+  // หน้าแรกสรุปสาธารณะ — ไม่ต้องเข้าสู่ระบบ
+  if (pathname === "/") {
+    return NextResponse.next();
+  }
+
   if (pathname === "/login") {
     if (isLoggedIn) {
       return NextResponse.redirect(new URL("/summary", req.url));

@@ -1,6 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import {
+  StickyTableFrame,
+  stickyThClass,
+  stickyTheadClass,
+} from "@/components/sticky-table-frame";
 
 type Props = {
   headers: string[];
@@ -12,31 +17,37 @@ type Props = {
     href?: string;
   }[];
   emptyMessage?: string;
+  stickyHeader?: boolean;
+  className?: string;
 };
 
-export function DataTable({ headers, rows, emptyMessage }: Props) {
+export function DataTable({
+  headers,
+  rows,
+  emptyMessage,
+  stickyHeader = true,
+  className = "",
+}: Props) {
   const router = useRouter();
 
   if (rows.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center text-slate-500">
-        {emptyMessage ?? "No data to display."}
-      </div>
+      <StickyTableFrame empty emptyMessage={emptyMessage ?? "No data to display."} />
     );
   }
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+    <StickyTableFrame className={className}>
       <table className="min-w-full border-collapse text-left text-sm">
-        <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+        <thead className={stickyHeader ? stickyTheadClass : "bg-slate-50 text-xs uppercase tracking-wide text-slate-500"}>
           <tr>
             {headers.map((h) => (
-              <th key={h} className="whitespace-nowrap px-3 py-3 font-semibold">
+              <th key={h} className={stickyThClass}>
                 {h}
               </th>
             ))}
-            <th className="whitespace-nowrap px-3 py-3 font-semibold">Source</th>
-            <th className="whitespace-nowrap px-3 py-3 font-semibold">Uploaded</th>
+            <th className={stickyThClass}>Source</th>
+            <th className={stickyThClass}>Uploaded</th>
           </tr>
         </thead>
         <tbody>
@@ -95,7 +106,7 @@ export function DataTable({ headers, rows, emptyMessage }: Props) {
           })}
         </tbody>
       </table>
-    </div>
+    </StickyTableFrame>
   );
 }
 

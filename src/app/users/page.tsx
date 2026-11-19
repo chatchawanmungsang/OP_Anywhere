@@ -1,4 +1,4 @@
-import { AppNav } from "@/components/app-nav";
+import { PageShell } from "@/components/page-shell";
 import { UsersManager } from "@/components/users-manager";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/session";
@@ -18,9 +18,9 @@ export default async function UsersPage() {
   });
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_#ecfdf5_0%,_#f8fafc_45%,_#e2e8f0_100%)]">
-      <AppNav activePath="/users" />
-      <main className="mx-auto max-w-5xl space-y-6 px-4 py-8 sm:px-6">
+    <PageShell
+      activePath="/users"
+      header={
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
             Users
@@ -29,8 +29,9 @@ export default async function UsersPage() {
             Create and manage Admin, Manager, and User accounts.
           </p>
         </div>
-        <UsersManager users={users} />
-      </main>
-    </div>
+      }
+    >
+      <UsersManager users={users} />
+    </PageShell>
   );
 }
