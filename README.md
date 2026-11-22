@@ -1,103 +1,149 @@
-# OP Anywhere — Excel Data Collection (e-Claim)
+# OP Anywhere
 
-Multi-user web app to import PROV SUM/DETAIL Excel workbooks into PostgreSQL tables defined by SQL schema files.
+ระบบเว็บสำหรับนำเข้าและสรุปข้อมูล e-Claim (ไฟล์ Excel SUM / DETAIL) เข้า PostgreSQL  
+รองรับรายงานสาธารณะ แดชบอร์ดรายเดือน และการจัดการสิทธิ์ตามบทบาทผู้ใช้
 
-## Stack
+## อัปเดตฟีเจอร์ล่าสุด
+
+### รายงานสาธารณะและแดชบอร์ด
+- **หน้าแรก (`/`)** — แดชบอร์ดสรุปรายเดือน: การ์ด Visit / ค่าบริการ / จำนวนหน่วย / เงินชดเชย พร้อมเปรียบเทียบเดือนก่อน (เพิ่ม–ลด %) และกราฟแยกงวด / แนวโน้ม
+- **หน่วยที่รักษา (`/by-hcode`)** — ตารางสรุปแบบ crosstab ตาม HCODE แยกต้นสังกัด งวด 1 / งวด 2 / รวมเดือน (ย้ายจากหน้าแรก)
+- **หน่วยประจำ (`/by-hmain`)** — สรุปตามหน่วยบริการประจำ (HMAIN2)
+- **รายงานจ่าย (`/payment-monthly`)** — สรุป Visit / ค่าบริการ / เงินชดเชยรายเดือน
+- ส่งออก **CSV / Excel** จากหน้ารายงานสาธารณะ (ชื่อไฟล์รูปแบบ `OP_{เดือน}_{ปี}`)
+- กลุ่มต้นสังกัด **กระทรวงสาธารณสุข** แยกย่อยตามแผนก/กรม
+
+### เมนูและการใช้งาน
+- **เมนูเดียวกันทุกหน้า** (`AppNav`) — หน้าแรก / หน่วยที่รักษา / หน่วยประจำ / รายงานจ่าย และเมนูหลังเข้าสู่ระบบ
+- ผู้เยี่ยมชมเห็นปุ่ม **เข้าสู่ระบบ** ด้านขวา; ผู้ล็อกอินเห็นชื่อ–บทบาท–หน่วย และ Sign out
+- เลย์เอาต์เต็มความกว้าง จอสูงจำกัดตาม viewport ตารางเลื่อนภายในกรอบ sticky header
+
+### สิทธิ์และ Summary
+- **Admin เท่านั้น**: Upload / Remark / Users
+- **Manager**: กำหนดหน่วยบริการ (HCODE) ตอนสร้างบัญชี; หน้า Summary ล็อกตัวกรองตามหน่วยของตัวเอง
+- หน้า Summary: กรองเดือน / ต้นสังกัด / หน่วย; คลิก TRAN_ID เปิดมุมมองใบเสร็จรายการรักษา
+- ตรวจซ้ำ TRAN_ID ตอนนำเข้า และแจ้งเตือนใน Summary เมื่อพบรายการซ้ำ
+- ลบข้อมูลตามงวดได้ (Admin)
+
+### โครงสร้างข้อมูล
+- ผู้ใช้มีฟิลด์ `hcode` / `hname` (ผูกหน่วยบริการ)
+- ข้อมูลหน่วยบริการอ้างอิงมีฟิลด์ `department` สำหรับจัดกลุ่มย่อย สธ.
+
+---
+
+## สแต็กเทคโนโลยี
 
 - Next.js (App Router) + TypeScript + Tailwind CSS
 - PostgreSQL + Prisma
-- Auth.js (NextAuth v5) credentials login
-- Streaming XLSX parser (ZIP + Sheet XML) for large files up to 500MB
-- **Scheduled night import**: upload stores files immediately; a separate worker imports into PostgreSQL overnight
+- Auth.js (NextAuth v5) — เข้าสู่ระบบด้วยอีเมล/รหัสผ่าน
+- อ่านไฟล์ XLSX แบบสตรีม (ZIP + Sheet XML) รองรับไฟล์ใหญ่ถึง 500MB
+- Docker Compose: บริการ `web` / `worker` / `postgres`
 
-## Tables (from SQL files)
+## พอร์ตเริ่มต้น (Docker)
 
-| SQL file | PostgreSQL table | Excel files |
+| บริการ | พอร์ตโฮสต์ |
+|---|---|
+| เว็บแอป | **3010** → 3000 |
+| PostgreSQL | **5434** → 5432 |
+
+เปิดใช้งานที่ [http://localhost:3010](http://localhost:3010)
+
+## เส้นทาง (Routes)
+
+| เส้นทาง | คำอธิบาย | ต้องล็อกอิน |
 |---|---|---|
-| `SQL-code-for-summary-table.sql` | `eclaim_transaction_summary` | `*SUM*.xlsx` (e.g. `PROV1_PROV2_RG07_SUM_6809_01.xlsx`) |
-| `SQL-code-for-detail-table.sql` | `eclaim_transaction_data` | `*DETAIL*.xlsx` (e.g. `PROV1_PROV2_RG07_DETAIL_6809_01.xlsx`) |
+| `/` | แดชบอร์ดสรุปรายเดือน | ไม่ |
+| `/by-hcode` | สรุปตามหน่วยที่รักษา | ไม่ |
+| `/by-hmain` | สรุปตามหน่วยบริการประจำ | ไม่ |
+| `/payment-monthly` | รายงานการจ่ายรายเดือน | ไม่ |
+| `/summary` | ตาราง Summary (ค้นหา/กรอง) | ใช่ |
+| `/detail` | มุมมองรายละเอียด / ใบเสร็จจาก TRAN_ID | ใช่ |
+| `/remark` | งาน Remark | Admin |
+| `/upload` | อัปโหลด Excel SUM/DETAIL | Admin |
+| `/users` | จัดการผู้ใช้ | Admin |
+| `/login` | เข้าสู่ระบบ | — |
 
-- **SUM**: Sheet 1 only
-- **DETAIL**: Sheet 1 + Sheet 2 (same headers, merged into one table)
-- Headers must match the SQL column schema
-- **PROV1 + PROV2 filter required** — only matching rows are imported
+## บทบาทผู้ใช้ (Roles)
 
-## Prerequisites
+| ความสามารถ | Admin | Manager | User |
+|---|---|---|---|
+| ดูรายงานสาธารณะ / แดชบอร์ด | ใช่ | ใช่ | ใช่ |
+| ดู Summary | ใช่ | ใช่ (ล็อกหน่วยตัวเอง) | ใช่ |
+| Upload / Remark / Users | ใช่ | ไม่ | ไม่ |
+| ลบข้อมูลตามงวด | ใช่ | ไม่ | ไม่ |
+| มีหน่วยบริการ (HCODE) ผูกบัญชี | ได้ | **ต้องมี** | ได้ |
 
-- Node.js 20+
-- Docker (for local PostgreSQL)
+### ผู้ดูแลระบบเริ่มต้น (หลัง seed)
 
-## Setup
+- อีเมล: `admin@example.com`
+- รหัสผ่าน: `admin123`
 
-1. Copy environment file:
+## ตารางข้อมูลจาก Excel
+
+| ไฟล์ SQL | ตาราง PostgreSQL | ไฟล์ Excel |
+|---|---|---|
+| `SQL-code-for-summary-table.sql` | `eclaim_transaction_summary` | `*SUM*.xlsx` |
+| `SQL-code-for-detail-table.sql` | `eclaim_transaction_data` | `*DETAIL*.xlsx` |
+
+- **SUM**: Sheet 1 เท่านั้น
+- **DETAIL**: Sheet 1 + Sheet 2 (หัวตารางเดียวกัน รวมเป็นตารางเดียว)
+- หัวคอลัมน์ต้องตรงกับสคีมา SQL
+- กรอง **PROV1 + PROV2** ตอนนำเข้า — นำเข้าเฉพาะแถวที่ตรงเงื่อนไข
+
+## การติดตั้งและรัน
+
+### 1) เตรียม environment
 
 ```bash
 cp .env.example .env
 ```
 
-2. Start Postgres (host port **5433**):
+### 2) รันด้วย Docker (แนะนำ)
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
 
-3. Install, migrate, seed:
+จะได้บริการ:
+
+- `op-anywhere-web` — เว็บ + migrate + seed ตอนสตาร์ท
+- `op-anywhere-worker` — ดึงงานนำเข้าตามรอบ
+- `op-anywhere-db` — PostgreSQL
+
+### 3) รันแบบพัฒนา (local)
+
+ต้องมี Postgres ทำงานอยู่ (เช่น จาก Docker เฉพาะ db) แล้ว:
 
 ```bash
 npm install
-npx prisma migrate dev
+npx prisma migrate deploy
 npm run db:seed
-```
-
-4. Run the app:
-
-```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+โดยปกติ dev server อยู่ที่พอร์ต 3000; ถ้าใช้ Compose ทั้งชุดให้เปิดที่พอร์ต **3010**
 
-### Default admin
+## กฎการอัปโหลด
 
-- Email: `admin@example.com`
-- Password: `admin123`
+- ชื่อไฟล์ต้องมี `SUM` หรือ `DETAIL` (ห้ามมีทั้งสองคำ)
+- เฉพาะ `.xlsx` ขนาดสูงสุด **500MB**
+- ฟอร์มต้องระบุ: **ปี พ.ศ.**, **เดือน**, **งวด (1/2)**, **PROV1**, **PROV2**
+- รองรับโหมดอัปโหลดทันทีหรือตั้งคิวนำเข้าตามกำหนด
+- ไฟล์ต้นฉบับเก็บที่ `data/archive/{year}/{month}/period-{n}/`
+- รูปแบบชื่อ `_*6809_01.xlsx` ช่วยเติมปี 2568 เดือน 9 งวด 1 อัตโนมัติ
+- ตรวจไฟล์/งวดซ้ำก่อนนำเข้า และแจ้ง TRAN_ID ซ้ำใน Summary
 
-## Roles
+## Worker นำเข้าตามกำหนด
 
-| Capability | Admin | Manager | User |
-|---|---|---|---|
-| View Summary / Detail | yes | yes | yes |
-| Upload Excel | yes | yes | no |
-| Manage users | yes | no | no |
-| Clear table data | yes | no | no |
-
-## Upload rules
-
-- Filename must contain `SUM` or `DETAIL` (not both)
-- `.xlsx` only, max **500MB**
-- Required on upload form: **ปี พ.ศ.**, **เดือน**, **งวด (1/2)**, **PROV1**, **PROV2**
-- Upload is **fast** (file archived only); import runs **overnight** via worker
-- Original files stored under `data/archive/{year}/{month}/period-{n}/`
-- Filename pattern `_*6809_01.xlsx` auto-fills year 2568, month 9, period 1
-
-## Scheduled night import
-
-Upload creates a job with status `SCHEDULED`. Run the worker after midnight:
+อัปโหลดสร้างงานสถานะ `SCHEDULED` → worker ประมวลผลเป็น `PROCESSING` → `SUCCESS` / `FAILED`
 
 ```bash
 npm run worker:import
 ```
 
-### Windows Task Scheduler (recommended)
+ใน Docker บริการ `worker` จะโพลงานให้อัตโนมัติ
 
-1. Open **Task Scheduler** → Create Basic Task
-2. Trigger: **Daily** at **00:05**
-3. Action: Start a program
-   - Program: `powershell.exe`
-   - Arguments: `-ExecutionPolicy Bypass -Command "cd C:\Users\kkpho\OP_Anywhere; npm.cmd run worker:import"`
-4. Ensure Docker Postgres is running and `.env` is configured
-
-### Environment
+ตัวแปรสภาพแวดล้อมที่เกี่ยวข้อง:
 
 ```env
 IMPORT_SCHEDULE_HOUR=0
@@ -105,53 +151,64 @@ IMPORT_SCHEDULE_MINUTE=0
 UPLOAD_ARCHIVE_DIR=./data/archive
 WORKER_BATCH_SIZE=500
 WORKER_MAX_JOBS_PER_RUN=1
+WORKER_POLL_INTERVAL_SECONDS=10
 ```
 
-Job statuses: `SCHEDULED` → `PROCESSING` → `SUCCESS` / `FAILED`
+## สคริปต์ที่มีประโยชน์
 
-## Routes
-
-- `/summary` — `eclaim_transaction_summary`
-- `/detail` — `eclaim_transaction_data`
-- `/upload` — import SUM/DETAIL files
-- `/users` — admin user management
-
-## Scripts
-
-| Script | Description |
+| คำสั่ง | คำอธิบาย |
 |---|---|
-| `npm run dev` | Dev server |
-| `npm run build` | Production build |
-| `npm run db:migrate` | Prisma migrate |
-| `npm run db:seed` | Seed admin user |
-| `npm run worker:import` | Process due scheduled upload jobs |
-| `npm run prune` | Interactive CLI — filter Excel files in `OP_Data` by PROV1/PROV2 and write pruned copies to `OP_Data/Pruned/` |
+| `npm run dev` | เซิร์ฟเวอร์พัฒนา |
+| `npm run build` | บิลด์ production |
+| `npm run db:migrate` | Prisma migrate (dev) |
+| `npm run db:seed` | ใส่ข้อมูลเริ่มต้น (admin + หน่วยบริการ) |
+| `npm run worker:import` | ประมวลผลงานอัปโหลดที่ครบกำหนด |
+| `npm run prune` | CLI กรองไฟล์ Excel ใน `OP_Data` ตาม PROV / SUB_FUND / SUMS_COST |
 
-## Excel Prune (local CLI)
+## Excel Prune (CLI บนเครื่อง)
 
-Filter SUM/DETAIL `.xlsx` files in `OP_Data` to rows where **PROV1** and **PROV2** match (default `4000`), **SUB_FUND** contains `WALKIN`, and **SUMS_COST** is `0`, one file at a time:
+กรองไฟล์ SUM/DETAIL ใน `OP_Data` ให้เหลือแถวที่ **PROV1/PROV2** ตรงเงื่อนไข (ค่าเริ่มต้น `4000`), **SUB_FUND** มี `WALKIN`, และ **SUMS_COST** เป็น `0`:
 
 ```powershell
 npm run prune
 ```
 
-If PowerShell blocks `npm` (`running scripts is disabled`), use either:
+ถ้า PowerShell บล็อกสคริปต์:
 
 ```powershell
 npm.cmd run prune
 ```
 
+หรือ
+
 ```powershell
 .\prune.cmd
 ```
 
-Or open **Command Prompt (cmd)** and run `npm run prune` there.
+- ต้นทาง: `OP_Data/*.xlsx`
+- ผลลัพธ์: `OP_Data/Pruned/{ชื่อเดิม}Prune.xlsx`
+- สถานะ: `OP_Data/.prune-state.json`
+- อ่าน/เขียนแบบสตรีม ใช้ RAM น้อยแม้ไฟล์ใหญ่
+- หยุดพักอัตโนมัติหลัง 60 นาทีต่อรอบ (`PRUNE_MAX_MS`) และรองรับ resume
 
-- Source: `OP_Data/*.xlsx` (SUM = sheet 1, DETAIL = sheets 1–2)
-- Output: `OP_Data/Pruned/{originalName}Prune.xlsx`
-- Status tracking: `OP_Data/.prune-state.json` marks `[NEW]` vs `[DONE]`
-- Uses streaming read/write (copies row XML directly) — low RAM even for 100MB+ files
-- Live progress bar + spinner on one line; auto-pauses after 60 min (`PRUNE_MAX_MS`) and saves checkpoint
-- Resume interrupted jobs via `[RESUME]` in the file list (checkpoint in `OP_Data/.prune-tmp/jobs/`)
+ตัวแปรเสริม: `OP_DATA_DIR`, `PRUNE_PROV1`, `PRUNE_PROV2`, `PRUNE_SUB_FUND_CONTAINS`, `PRUNE_SUMS_COST`, `PRUNE_TMP_DIR`, `PRUNE_MAX_MS`
 
-Optional env vars: `OP_DATA_DIR`, `PRUNE_PROV1`, `PRUNE_PROV2`, `PRUNE_SUB_FUND_CONTAINS` (default `WALKIN`), `PRUNE_SUMS_COST` (default `0`), `PRUNE_TMP_DIR`, `PRUNE_MAX_MS` (default 3600000 = 1 hour per run).
+## โครงสร้างโปรเจกต์โดยย่อ
+
+```
+OP_Anywhere/
+├── prisma/                 # schema, migrations, seed, ข้อมูลอ้างอิงหน่วยบริการ
+├── src/
+│   ├── app/                # หน้าและ API routes
+│   ├── components/         # UI (แดชบอร์ด, รายงาน, เมนู, Summary)
+│   └── lib/                # สถิติสาธารณะ, สิทธิ์, บริการนำเข้า
+├── scripts/                # worker, prune, ยูทิลิตี้
+├── data/                   # archive ไฟล์อัปโหลด (ไม่ commit)
+├── OP_Data/                # ไฟล์ Excel สำหรับ prune (ไม่ commit)
+├── docker-compose.yml
+└── Dockerfile
+```
+
+## คลังโค้ด
+
+- GitHub: [chatchawanmungsang/OP_Anywhere](https://github.com/chatchawanmungsang/OP_Anywhere)
