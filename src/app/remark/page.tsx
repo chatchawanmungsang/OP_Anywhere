@@ -9,7 +9,8 @@ import {
 import type { RemarkRuleDto } from "@/components/remark-rules-manager";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
-import { canUpload } from "@/lib/roles";
+import { canAccessRemark } from "@/lib/roles";
+import { redirect } from "next/navigation";
 
 const PAGE_SIZE = 30;
 
@@ -32,6 +33,9 @@ export default async function RemarkPage({
   searchParams: SearchParams;
 }) {
   const session = await requireSession();
+  if (!canAccessRemark(session.user.role)) {
+    redirect("/summary");
+  }
   const params = await searchParams;
 
   // 1. Discover available imported (year, month, period) combinations in DB
@@ -265,7 +269,7 @@ export default async function RemarkPage({
     >
       <Suspense fallback={null}>
         <RemarkWorkspace
-          canRunAndManage={canUpload(session.user.role)}
+          canRunAndManage={canAccessRemark(session.user.role)}
           selectedYear={selectedYear}
           selectedMonth={selectedMonth}
           selectedPeriod={selectedPeriod}

@@ -9,6 +9,8 @@ import { prisma } from "@/lib/prisma";
 declare module "next-auth" {
   interface User {
     role: Role;
+    hcode?: string | null;
+    hname?: string | null;
   }
 
   interface Session {
@@ -17,6 +19,8 @@ declare module "next-auth" {
       email: string;
       name: string;
       role: Role;
+      hcode: string | null;
+      hname: string | null;
     } & DefaultSession["user"];
   }
 }
@@ -65,6 +69,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: user.email,
           name: user.name,
           role: user.role,
+          hcode: user.hcode,
+          hname: user.hname,
         };
       },
     }),
@@ -74,6 +80,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (user) {
         token.id = user.id!;
         token.role = user.role;
+        token.hcode = user.hcode ?? null;
+        token.hname = user.hname ?? null;
       }
       return token;
     },
@@ -81,6 +89,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (session.user) {
         session.user.id = token.id as string;
         session.user.role = token.role as Role;
+        session.user.hcode = (token.hcode as string | null) ?? null;
+        session.user.hname = (token.hname as string | null) ?? null;
       }
       return session;
     },

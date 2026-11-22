@@ -109,19 +109,40 @@ async function seedReferenceTables() {
     }
   }
 
-  // 2. Seed Health Office
+  // 2. Seed / refresh Health Office (including แผนก/กรม)
   const hoPath = path.join(refDir, "health_office.json");
   if (fs.existsSync(hoPath)) {
+    const hoRows = JSON.parse(fs.readFileSync(hoPath, "utf8")) as Array<{
+      hcode: string;
+      name?: string;
+      orgType?: string;
+      unitType?: string;
+      affiliation?: string;
+      department?: string;
+      hospLevel?: string;
+      activeStatus?: string;
+      provinceCode?: string;
+      provinceName?: string;
+      amphurCode?: string;
+    }>;
     const existingHo = await prisma.refHealthOffice.count();
-    if (existingHo === 0) {
-      const hoRows = JSON.parse(fs.readFileSync(hoPath, "utf8")) as Array<
-        Record<string, string>
-      >;
+    const hasDepartment =
+      existingHo > 0
+        ? (await prisma.refHealthOffice.count({
+            where: { department: { not: null } },
+          })) > 0
+        : false;
+
+    if (existingHo === 0 || !hasDepartment) {
+      if (existingHo > 0) {
+        await prisma.refHealthOffice.deleteMany();
+        console.log("Cleared ref_health_office to reload with department");
+      }
       const chunkSize = 2500;
       for (let i = 0; i < hoRows.length; i += chunkSize) {
         const chunk = hoRows.slice(i, i + chunkSize);
         await prisma.refHealthOffice.createMany({
-          data: chunk as never,
+          data: chunk,
           skipDuplicates: true,
         });
       }

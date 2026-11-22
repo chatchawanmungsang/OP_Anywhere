@@ -193,7 +193,24 @@ const userSchema = z.object({
   password: z.string().min(6).optional(),
   role: roleSchema,
   active: z.boolean(),
+  hcode: z.string().max(10).optional(),
+  hname: z.string().max(255).optional(),
 });
+
+function resolveUserUnit(role: string, hcodeRaw: string, hnameRaw: string) {
+  const hcode = hcodeRaw.trim();
+  const hname = hnameRaw.trim();
+  if (role === "MANAGER") {
+    if (!hcode) {
+      return {
+        ok: false as const,
+        message: "Role Manager ต้องระบุรหัสหน่วยบริการ",
+      };
+    }
+    return { ok: true as const, hcode, hname: hname || null };
+  }
+  return { ok: true as const, hcode: null, hname: null };
+}
 
 export async function createUserAction(
   formData: FormData,
@@ -209,6 +226,8 @@ export async function createUserAction(
     password: String(formData.get("password") ?? ""),
     role: String(formData.get("role") ?? "USER"),
     active: formData.get("active") === "on" || formData.get("active") === "true",
+    hcode: String(formData.get("hcode") ?? ""),
+    hname: String(formData.get("hname") ?? ""),
   });
 
   if (!parsed.success) {
@@ -218,6 +237,13 @@ export async function createUserAction(
   if (!parsed.data.password) {
     return { ok: false, message: "Password is required for new users." };
   }
+
+  const unit = resolveUserUnit(
+    parsed.data.role,
+    parsed.data.hcode ?? "",
+    parsed.data.hname ?? "",
+  );
+  if (!unit.ok) return { ok: false, message: unit.message };
 
   const existing = await prisma.user.findUnique({
     where: { email: parsed.data.email },
@@ -234,6 +260,8 @@ export async function createUserAction(
       passwordHash,
       role: parsed.data.role as Role,
       active: parsed.data.active,
+      hcode: unit.hcode,
+      hname: unit.hname,
     },
   });
 
@@ -261,6 +289,8 @@ export async function updateUserAction(
     password: passwordRaw || undefined,
     role: String(formData.get("role") ?? "USER"),
     active: formData.get("active") === "on" || formData.get("active") === "true",
+    hcode: String(formData.get("hcode") ?? ""),
+    hname: String(formData.get("hname") ?? ""),
   });
 
   if (!parsed.success) {
@@ -271,11 +301,20 @@ export async function updateUserAction(
     return { ok: false, message: "You cannot deactivate your own account." };
   }
 
+  const unit = resolveUserUnit(
+    parsed.data.role,
+    parsed.data.hcode ?? "",
+    parsed.data.hname ?? "",
+  );
+  if (!unit.ok) return { ok: false, message: unit.message };
+
   const data: Prisma.UserUpdateInput = {
     email: parsed.data.email,
     name: parsed.data.name,
     role: parsed.data.role as Role,
     active: parsed.data.active,
+    hcode: unit.hcode,
+    hname: unit.hname,
   };
 
   if (parsed.data.password) {

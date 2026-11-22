@@ -2,7 +2,7 @@
 
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { canUpload } from "@/lib/roles";
+import { canAccessRemark } from "@/lib/roles";
 import {
   compileBuilderConditionsToSql,
   executeRemarkRulesForPeriod,
@@ -25,7 +25,7 @@ export async function runRemarkCheckAction(input: {
   period: number;
 }): Promise<RemarkActionResult> {
   const session = await auth();
-  if (!session?.user || !canUpload(session.user.role)) {
+  if (!session?.user || !canAccessRemark(session.user.role)) {
     return {
       ok: false,
       message: "เฉพาะผู้ดูแลระบบ (Admin) หรือ Manager เท่านั้นที่สั่งรันตรวจสอบได้",
@@ -70,7 +70,7 @@ export async function saveRemarkRuleAction(
   input: SaveRuleInput,
 ): Promise<RemarkActionResult> {
   const session = await auth();
-  if (!session?.user || !canUpload(session.user.role)) {
+  if (!session?.user || !canAccessRemark(session.user.role)) {
     return {
       ok: false,
       message: "ไม่มีสิทธิ์จัดการกฎการคัดกรอง",
@@ -154,7 +154,7 @@ export async function toggleRemarkRuleAction(
   active: boolean,
 ): Promise<RemarkActionResult> {
   const session = await auth();
-  if (!session?.user || !canUpload(session.user.role)) {
+  if (!session?.user || !canAccessRemark(session.user.role)) {
     return { ok: false, message: "ไม่มีสิทธิ์แก้ไขสถานะกฎ" };
   }
 
@@ -174,7 +174,7 @@ export async function updateRulePriorityAction(
   priority: number,
 ): Promise<RemarkActionResult> {
   const session = await auth();
-  if (!session?.user || !canUpload(session.user.role)) {
+  if (!session?.user || !canAccessRemark(session.user.role)) {
     return { ok: false, message: "ไม่มีสิทธิ์จัดลำดับกฎ" };
   }
 
@@ -190,7 +190,7 @@ export async function deleteRemarkRuleAction(
   id: string,
 ): Promise<RemarkActionResult> {
   const session = await auth();
-  if (!session?.user || !canUpload(session.user.role)) {
+  if (!session?.user || !canAccessRemark(session.user.role)) {
     return { ok: false, message: "ไม่มีสิทธิ์ลบกฎ" };
   }
 

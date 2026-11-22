@@ -1,7 +1,7 @@
 import { PageShell } from "@/components/page-shell";
-import { PublicMonthSummary } from "@/components/public-month-summary";
+import { HomeDashboard } from "@/components/home-dashboard";
 import {
-  getHcodeCrosstabForMonth,
+  getDashboardPayload,
   listAvailableSummaryMonths,
 } from "@/lib/public-summary-stats";
 
@@ -15,44 +15,24 @@ export default async function Home({
   const params = await searchParams;
   const months = await listAvailableSummaryMonths();
 
-  let selectedYear = Number(params.year) || months[0]?.yearThai || null;
-  let selectedMonth = Number(params.month) || months[0]?.monthThai || null;
+  let selectedYear = Number(params.year) || months[0]?.yearThai || 2569;
+  let selectedMonth = Number(params.month) || months[0]?.monthThai || 1;
 
   if (
-    selectedYear &&
-    selectedMonth &&
+    months.length > 0 &&
     !months.some(
       (m) => m.yearThai === selectedYear && m.monthThai === selectedMonth,
     )
   ) {
-    selectedYear = months[0]?.yearThai ?? null;
-    selectedMonth = months[0]?.monthThai ?? null;
+    selectedYear = months[0].yearThai;
+    selectedMonth = months[0].monthThai;
   }
 
-  const crosstab =
-    selectedYear && selectedMonth
-      ? await getHcodeCrosstabForMonth(selectedYear, selectedMonth)
-      : {
-          groups: [],
-          totals: {
-            p1TranCount: 0,
-            p1ChargeCost: 0,
-            p2TranCount: 0,
-            p2ChargeCost: 0,
-            monthTranCount: 0,
-            monthChargeCost: 0,
-            unitCount: 0,
-          },
-        };
+  const data = await getDashboardPayload(selectedYear, selectedMonth);
 
   return (
-    <PageShell activePath="/" showNav={false}>
-      <PublicMonthSummary
-        months={months}
-        selectedYear={selectedYear}
-        selectedMonth={selectedMonth}
-        crosstab={crosstab}
-      />
+    <PageShell activePath="/">
+      <HomeDashboard data={data} />
     </PageShell>
   );
 }

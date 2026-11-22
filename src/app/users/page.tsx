@@ -14,6 +14,8 @@ export default async function UsersPage() {
       name: true,
       role: true,
       active: true,
+      hcode: true,
+      hname: true,
     },
   });
 

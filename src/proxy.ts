@@ -1,6 +1,13 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 
+const PUBLIC_PATHS = new Set([
+  "/",
+  "/by-hcode",
+  "/by-hmain",
+  "/payment-monthly",
+]);
+
 export default auth((req) => {
   const { pathname } = req.nextUrl;
   const isLoggedIn = !!req.auth;
@@ -9,8 +16,11 @@ export default auth((req) => {
     return NextResponse.next();
   }
 
-  // หน้าแรกสรุปสาธารณะ — ไม่ต้องเข้าสู่ระบบ
-  if (pathname === "/") {
+  // Public report pages + export API
+  if (
+    PUBLIC_PATHS.has(pathname) ||
+    pathname.startsWith("/api/reports/")
+  ) {
     return NextResponse.next();
   }
 

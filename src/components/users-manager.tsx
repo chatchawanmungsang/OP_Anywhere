@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import {
   createUserAction,
   updateUserAction,
@@ -19,24 +19,71 @@ type UserRow = {
   name: string;
   role: Role;
   active: boolean;
+  hcode: string | null;
+  hname: string | null;
 };
+
+type OfficeHit = { hcode: string; name: string; affiliation: string };
 
 export function UsersManager({ users }: { users: UserRow[] }) {
   const [message, setMessage] = useState<ActionResult | null>(null);
   const [editing, setEditing] = useState<UserRow | null>(null);
   const [pending, startTransition] = useTransition();
+  const [role, setRole] = useState<Role>(Role.USER);
+  const [hcode, setHcode] = useState("");
+  const [hname, setHname] = useState("");
+  const [officeQ, setOfficeQ] = useState("");
+  const [hits, setHits] = useState<OfficeHit[]>([]);
+
+  useEffect(() => {
+    if (editing) {
+      setRole(editing.role);
+      setHcode(editing.hcode ?? "");
+      setHname(editing.hname ?? "");
+    } else {
+      setRole(Role.USER);
+      setHcode("");
+      setHname("");
+    }
+    setOfficeQ("");
+    setHits([]);
+  }, [editing]);
+
+  useEffect(() => {
+    if (role !== Role.MANAGER || officeQ.trim().length < 1) {
+      setHits([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/health-offices/search?q=${encodeURIComponent(officeQ.trim())}`,
+        );
+        const data = (await res.json()) as { items?: OfficeHit[] };
+        setHits(data.items ?? []);
+      } catch {
+        setHits([]);
+      }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [officeQ, role]);
 
   function run(
     action: (fd: FormData) => Promise<ActionResult>,
     form: HTMLFormElement,
   ) {
     const fd = new FormData(form);
+    fd.set("hcode", hcode);
+    fd.set("hname", hname);
     startTransition(async () => {
       const res = await action(fd);
       setMessage(res);
       if (res.ok) {
         form.reset();
         setEditing(null);
+        setHcode("");
+        setHname("");
+        setRole(Role.USER);
       }
     });
   }
@@ -105,8 +152,8 @@ export function UsersManager({ users }: { users: UserRow[] }) {
             <label className="mb-1 block text-sm text-slate-600">Role</label>
             <select
               name="role"
-              defaultValue={editing?.role ?? Role.USER}
-              key={`role-${editing?.id ?? "new"}`}
+              value={role}
+              onChange={(e) => setRole(e.target.value as Role)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
             >
               <option value={Role.ADMIN}>Admin</option>
@@ -114,6 +161,63 @@ export function UsersManager({ users }: { users: UserRow[] }) {
               <option value={Role.USER}>User</option>
             </select>
           </div>
+
+          {role === Role.MANAGER ? (
+            <div className="space-y-2 sm:col-span-2">
+              <label className="block text-sm font-medium text-slate-700">
+                หน่วยบริการ (บังคับสำหรับ Manager)
+              </label>
+              <input
+                type="search"
+                value={officeQ}
+                onChange={(e) => setOfficeQ(e.target.value)}
+                placeholder="ค้นหาด้วยรหัสหรือชื่อหน่วยบริการ…"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+              {hits.length > 0 ? (
+                <ul className="max-h-40 overflow-auto rounded-lg border border-slate-200 bg-white text-sm shadow-sm">
+                  {hits.map((h) => (
+                    <li key={h.hcode}>
+                      <button
+                        type="button"
+                        className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-teal-50"
+                        onClick={() => {
+                          setHcode(h.hcode);
+                          setHname(h.name);
+                          setOfficeQ("");
+                          setHits([]);
+                        }}
+                      >
+                        <span className="font-mono font-semibold text-slate-900">
+                          {h.hcode}
+                        </span>
+                        <span className="text-slate-700">{h.name}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-800">
+                {hcode ? (
+                  <>
+                    <span className="font-mono font-semibold">{hcode}</span>
+                    <span className="mx-2 text-slate-400">·</span>
+                    <span>{hname || "—"}</span>
+                  </>
+                ) : (
+                  <span className="text-slate-500">ยังไม่ได้เลือกหน่วยบริการ</span>
+                )}
+              </div>
+              <input type="hidden" name="hcode" value={hcode} />
+              <input type="hidden" name="hname" value={hname} />
+            </div>
+          ) : (
+            <>
+              <input type="hidden" name="hcode" value="" />
+              <input type="hidden" name="hname" value="" />
+            </>
+          )}
+
           <label className="flex items-center gap-2 text-sm text-slate-700 sm:col-span-2">
             <input
               type="checkbox"
@@ -151,6 +255,7 @@ export function UsersManager({ users }: { users: UserRow[] }) {
               <th className={stickyThClass}>Name</th>
               <th className={stickyThClass}>Email</th>
               <th className={stickyThClass}>Role</th>
+              <th className={stickyThClass}>หน่วยบริการ</th>
               <th className={stickyThClass}>Status</th>
               <th className={stickyThClass}>Actions</th>
             </tr>
@@ -158,9 +263,23 @@ export function UsersManager({ users }: { users: UserRow[] }) {
           <tbody>
             {users.map((user) => (
               <tr key={user.id} className="border-t border-slate-100">
-                <td className="px-3 py-2 font-medium text-slate-900">{user.name}</td>
+                <td className="px-3 py-2 font-medium text-slate-900">
+                  {user.name}
+                </td>
                 <td className="px-3 py-2 text-slate-600">{user.email}</td>
                 <td className="px-3 py-2">{user.role}</td>
+                <td className="px-3 py-2 text-slate-700">
+                  {user.hcode ? (
+                    <span>
+                      <span className="font-mono text-xs font-semibold">
+                        {user.hcode}
+                      </span>{" "}
+                      {user.hname}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </td>
                 <td className="px-3 py-2">
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs font-medium ${
